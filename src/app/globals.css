@@ -5,13 +5,6 @@
   --foreground: #171717;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
@@ -23,4 +16,60 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Custom Scrollbar Styling - Firefox fallback */
+@supports (scrollbar-width: thin) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #4b5563 #1f2937;
+  }
+}
+
+/* Webkit Scrollbar (Chrome, Safari, Edge) */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: linear-gradient(to bottom, #1f2937, #111827);
+  border-radius: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(to bottom, #6b7280, #4b5563);
+  border-radius: 8px;
+  border: 1px solid #374151;
+  transition: background 0.2s ease-in-out;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(to bottom, #9ca3af, #6b7280);
+}
+
+*::-webkit-scrollbar-corner {
+  background: #1f2937;
+}
+
+/* Special styling for main chat area scrollbar */
+.chat-messages::-webkit-scrollbar-thumb {
+  background: linear-gradient(to bottom, #3b82f6, #2563eb);
+  border: 1px solid #1e40af;
+  transition: background 0.2s ease-in-out;
+}
+
+.chat-messages::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(to bottom, #60a5fa, #3b82f6);
+}
+
+/* Special styling for sidebar scrollbar */
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(to bottom, #6366f1, #4f46e5);
+  border: 1px solid #3730a3;
+  transition: background 0.2s ease-in-out;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(to bottom, #818cf8, #6366f1);
 }

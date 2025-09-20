@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/Button'
 import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
+import { MessageCircle } from 'lucide-react'
 
 function LoginForm() {
   const supabase = createClient()
@@ -30,19 +31,20 @@ function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
-      <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full mx-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 to-gray-800">
+      <div className="bg-gray-800 border border-gray-700 p-8 rounded-xl shadow-lg max-w-md w-full mx-4">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            🗨️ Chat App
+          <h1 className="text-3xl font-bold text-gray-100 mb-2 flex items-center justify-center gap-2">
+            <MessageCircle size={28} className="text-blue-400" />
+            Chat App
           </h1>
-          <p className="text-gray-600">
+          <p className="text-gray-400">
             Connect and chat with friends in real-time
           </p>
         </div>
         
         {error && (
-          <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+          <div className="mb-4 p-3 bg-red-900/50 border border-red-700 text-red-300 rounded">
             Authentication failed. Please try again.
           </div>
         )}

@@ -33,9 +33,12 @@ interface ChatState {
   // Actions
   setCurrentRoom: (room: Room | null) => void
   addMessage: (message: Message) => void
+  updateMessage: (messageId: string, updates: Partial<Message>) => void
+  deleteMessage: (messageId: string) => void
   setMessages: (messages: Message[]) => void
   addRoom: (room: Room) => void
   setRooms: (rooms: Room[]) => void
+  removeRoom: (roomId: string) => void
   setLoading: (loading: boolean) => void
   setError: (error: string | null) => void
   clearMessages: () => void
@@ -59,10 +62,37 @@ export const useChatStore = create<ChatState>()(
       }
     },
     
-    addMessage: (message) => set((state) => ({
-      messages: [...state.messages, message].sort((a, b) => 
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    addMessage: (message) => set((state) => {
+      // Check if message already exists to prevent duplicates
+      const existingMessage = state.messages.find(m => m.id === message.id)
+      if (existingMessage) {
+        console.log('🔄 Message already exists, updating:', message.id)
+        // Update existing message (in case profile data was added)
+        return {
+          messages: state.messages.map(m => 
+            m.id === message.id ? message : m
+          ).sort((a, b) => 
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          )
+        }
+      }
+      
+      console.log('➕ Adding new message:', message.id)
+      return {
+        messages: [...state.messages, message].sort((a, b) => 
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        )
+      }
+    }),
+
+    updateMessage: (messageId, updates) => set((state) => ({
+      messages: state.messages.map(m => 
+        m.id === messageId ? { ...m, ...updates } : m
       )
+    })),
+
+    deleteMessage: (messageId) => set((state) => ({
+      messages: state.messages.filter(m => m.id !== messageId)
     })),
     
     setMessages: (messages) => set({ 
@@ -78,6 +108,10 @@ export const useChatStore = create<ChatState>()(
     setRooms: (rooms) => set({ 
       rooms: rooms.sort((a, b) => a.name.localeCompare(b.name)) 
     }),
+    
+    removeRoom: (roomId) => set((state) => ({
+      rooms: state.rooms.filter(room => room.id !== roomId)
+    })),
     
     setLoading: (loading) => set({ isLoading: loading }),
     setError: (error) => set({ error }),

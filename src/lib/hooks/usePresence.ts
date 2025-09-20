@@ -28,12 +28,14 @@ export function useRoomPresence(roomId: string | null, currentUser: any) {
           .on('presence', { event: 'sync' }, () => {
             const state = channel.presenceState()
             const users: UserPresence[] = []
+            const seenUsers = new Set<string>()
             
-            // Convert presence state to user list
+            // Convert presence state to user list (deduplicated)
             Object.keys(state).forEach((userId) => {
               const presences = state[userId] as any[]
-              if (presences.length > 0) {
+              if (presences.length > 0 && !seenUsers.has(userId)) {
                 users.push(presences[0] as UserPresence)
+                seenUsers.add(userId)
               }
             })
             
