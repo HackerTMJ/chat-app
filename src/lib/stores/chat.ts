@@ -22,6 +22,12 @@ export interface Room {
   created_at: string
 }
 
+export interface TypingUser {
+  userId: string
+  username: string
+  timestamp: number
+}
+
 interface ChatState {
   // Current state
   currentRoom: Room | null
@@ -29,6 +35,7 @@ interface ChatState {
   rooms: Room[]
   isLoading: boolean
   error: string | null
+  typingUsers: TypingUser[]
   
   // Actions
   setCurrentRoom: (room: Room | null) => void
@@ -42,6 +49,9 @@ interface ChatState {
   setLoading: (loading: boolean) => void
   setError: (error: string | null) => void
   clearMessages: () => void
+  addTypingUser: (user: TypingUser) => void
+  removeTypingUser: (userId: string) => void
+  clearTypingUsers: () => void
 }
 
 export const useChatStore = create<ChatState>()(
@@ -52,6 +62,7 @@ export const useChatStore = create<ChatState>()(
     rooms: [],
     isLoading: false,
     error: null,
+    typingUsers: [],
     
     // Actions
     setCurrentRoom: (room) => {
@@ -115,6 +126,21 @@ export const useChatStore = create<ChatState>()(
     
     setLoading: (loading) => set({ isLoading: loading }),
     setError: (error) => set({ error }),
-    clearMessages: () => set({ messages: [] })
+    clearMessages: () => set({ messages: [] }),
+    
+    // Typing indicator actions
+    addTypingUser: (user) => set((state) => {
+      // Remove existing entry for this user and add new one
+      const filteredUsers = state.typingUsers.filter(u => u.userId !== user.userId)
+      return {
+        typingUsers: [...filteredUsers, user]
+      }
+    }),
+    
+    removeTypingUser: (userId) => set((state) => ({
+      typingUsers: state.typingUsers.filter(u => u.userId !== userId)
+    })),
+    
+    clearTypingUsers: () => set({ typingUsers: [] })
   }))
 )

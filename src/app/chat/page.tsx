@@ -8,6 +8,8 @@ import { OnlineUsers } from '@/components/ui/OnlineUsers'
 import { useChatStore } from '@/lib/stores/chat'
 import { useRealTimeMessages, useLoadMessages, useLoadRooms, useSendMessage, useCreateRoom, useJoinRoom, useDeleteRoom, useLeaveRoom } from '@/lib/hooks/useChat'
 import { useRoomPresence } from '@/lib/hooks/usePresence'
+import { useTypingIndicator, useTypingCleanup } from '@/lib/hooks/useTypingIndicator'
+import { TypingIndicator } from '@/components/TypingIndicator'
 import { useRouter } from 'next/navigation'
 import { 
   Send, 
@@ -60,6 +62,10 @@ export default function ChatPage() {
   // Track online users in current room
   const onlineUsers = useRoomPresence(currentRoom?.id || null, user)
   
+  // Typing indicator functionality
+  const { startTyping, stopTyping } = useTypingIndicator(currentRoom?.id || null, user)
+  useTypingCleanup()
+  
   // Load user and set up authentication
   useEffect(() => {
     const checkUser = async () => {
@@ -105,10 +111,30 @@ export default function ChatPage() {
     e.preventDefault()
     if (!messageText.trim() || !user) return
     
+    // Stop typing indicator before sending
+    stopTyping()
+    
     const success = await sendMessage(messageText, user.id)
     if (success) {
       setMessageText('')
     }
+  }
+
+  // Handle typing events
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setMessageText(e.target.value)
+    
+    // Start typing indicator when user types
+    if (e.target.value.length > 0) {
+      startTyping()
+    } else {
+      stopTyping()
+    }
+  }
+
+  const handleInputBlur = () => {
+    // Stop typing when input loses focus
+    stopTyping()
   }
   
   const handleCreateRoom = async (e: React.FormEvent) => {
@@ -620,6 +646,9 @@ export default function ChatPage() {
           <div ref={messagesEndRef} />
         </div>
         
+        {/* Typing Indicator */}
+        <TypingIndicator />
+        
         {/* Message Input */}
         {currentRoom && (
           <div className="bg-gradient-to-r from-gray-800 to-gray-700 border-t border-gray-700/50 p-6 shadow-lg">
@@ -627,7 +656,8 @@ export default function ChatPage() {
               <input
                 type="text"
                 value={messageText}
-                onChange={(e) => setMessageText(e.target.value)}
+                onChange={handleInputChange}
+                onBlur={handleInputBlur}
                 placeholder="Type your message..."
                 className="flex-1 p-4 border border-gray-600 rounded-2xl bg-gray-700/80 text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm shadow-lg"
                 disabled={isLoading}
