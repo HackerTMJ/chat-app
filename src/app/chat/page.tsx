@@ -5,71 +5,70 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/Button'
 import { RoomShare } from '@/components/ui/RoomShare'
 import { OnlineUsers } from '@/components/ui/OnlineUsers'
+import { RoomInfo } from '@/components/ui/RoomInfo'
+import { MessageSearch } from '@/components/ui/MessageSearch'
+import { MessageReactions } from '@/components/ui/MessageReactions'
+import { TypingIndicator } from '@/components/ui/TypingIndicator'
+import { StatusSelector } from '@/components/ui/StatusSelector'
+import { StatusIndicator } from '@/components/ui/StatusIndicator'
+import { useConfirmation } from '@/components/ui/ConfirmationDialog'
+import { CacheDemo } from '@/components/cache/CacheDemo'
 import { useChatStore } from '@/lib/stores/chat'
 import { useRealTimeMessages, useLoadMessages, useLoadRooms, useSendMessage, useCreateRoom, useJoinRoom, useDeleteRoom, useLeaveRoom } from '@/lib/hooks/useChat'
 import { useRoomPresence } from '@/lib/hooks/usePresence'
-import { useTypingIndicator, useTypingCleanup } from '@/lib/hooks/useTypingIndicator'
-import { TypingIndicator } from '@/components/TypingIndicator'
+import { useTypingIndicator } from '@/lib/hooks/useTypingIndicator'
+import { useUserStatus } from '@/lib/hooks/useUserStatus'
 import { useRouter } from 'next/navigation'
-import { 
-  Send, 
-  Link2, 
-  Plus, 
-  Share2, 
-  RefreshCw, 
-  LogOut,
-  Trash2,
-  DoorOpen,
-  MessageCircle,
-  Hash,
-  Users,
-  X,
-  Check,
-  Edit3,
-  MoreVertical,
-  Save,
-  Wifi,
-  WifiOff
-} from 'lucide-react'
+import { MessageCircle, Send, Plus, Link2, Hash, LogOut, Settings, Phone, Share2, RefreshCw, Edit3, Trash2, Save, X, Check, ChevronLeft, ChevronRight, Search, ChevronDown } from 'lucide-react'
+import { NotificationSettings } from '@/components/notifications/NotificationSettings'
+import { useNotifications } from '@/lib/hooks/useNotifications'
+import { SimpleThemeToggle } from '@/components/ui/SimpleThemeToggle'
 
 export default function ChatPage() {
   const router = useRouter()
+  const supabase = createClient()
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
   const [user, setUser] = useState<any>(null)
   const [messageText, setMessageText] = useState('')
   const [newRoomName, setNewRoomName] = useState('')
   const [showCreateRoom, setShowCreateRoom] = useState(false)
   const [showRoomShare, setShowRoomShare] = useState(false)
-  const [lastRefresh, setLastRefresh] = useState<Date>(new Date())
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
   const [editingText, setEditingText] = useState('')
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  
-  const { 
-    currentRoom, 
-    messages, 
-    rooms, 
-    isLoading, 
-    error,
+  const [isSavingEdit, setIsSavingEdit] = useState(false)
+  const [typingStatus, setTypingStatus] = useState<{ [key: string]: boolean }>({})
+  const [typingTimeout, setTypingTimeout] = useState<NodeJS.Timeout | null>(null)
+  const [isRightSidebarCollapsed, setIsRightSidebarCollapsed] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
+  const [showScrollButton, setShowScrollButton] = useState(false)
+  const [autoScroll, setAutoScroll] = useState(true)
+
+  const {
+    currentRoom,
+    rooms,
+    messages,
+    isLoading,
     setCurrentRoom,
-    setError 
   } = useChatStore()
-  
+
+  // Hooks
   const sendMessage = useSendMessage()
   const createRoom = useCreateRoom()
   const deleteRoom = useDeleteRoom()
   const leaveRoom = useLeaveRoom()
-  
-  // Track online users in current room
-  const onlineUsers = useRoomPresence(currentRoom?.id || null, user)
-  
-  // Typing indicator functionality
-  const { startTyping, stopTyping } = useTypingIndicator(currentRoom?.id || null, user)
-  useTypingCleanup()
-  
+  const onlineUsers = useRoomPresence(currentRoom?.id || null, user) || []
+  const { startTyping: broadcastStartTyping, stopTyping: broadcastStopTyping } = useTypingIndicator(currentRoom?.id || null, user)
+  const { userStatus } = useUserStatus(user)
+  const { showConfirmation, ConfirmationComponent } = useConfirmation()
+
+  // Initialize notifications
+  useNotifications()
+
   // Load user and set up authentication
   useEffect(() => {
     const checkUser = async () => {
-      const supabase = createClient()
       const { data: { user }, error } = await supabase.auth.getUser()
       
       if (error || !user) {
@@ -81,39 +80,163 @@ export default function ChatPage() {
     }
     
     checkUser()
-  }, [router])
-  
-  // Load rooms on mount
-  useLoadRooms()
-  
-  // Set default room (Public Chat) when rooms are loaded
+  }, [router, supabase.auth])
+
+  // Load data functions
+  const loadMessages = useLoadMessages(currentRoom?.id || null)
+  const loadRooms = useLoadRooms()
+
+  // Real-time subscriptions
+  useRealTimeMessages(currentRoom?.id || null)
+
+  // Load data on mount and when user changes
   useEffect(() => {
-    if (rooms.length > 0 && !currentRoom) {
-      const publicRoom = rooms.find(room => room.code === 'PUBLIC')
+    if (user) {
+      // loadRooms is handled by the hook
+    }
+  }, [user])
+
+  // Auto-scroll functions
+  const scrollToBottom = (smooth = true) => {
+    // Try multiple approaches to ensure scrolling works
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'end' })
+    }
+    if (messagesContainerRef.current) {
+      const container = messagesContainerRef.current
+      container.scrollTop = container.scrollHeight
+    }
+  }
+
+  const checkScrollPosition = () => {
+    if (!messagesContainerRef.current) return
+    
+    const container = messagesContainerRef.current
+    const scrollTop = container.scrollTop
+    const scrollHeight = container.scrollHeight
+    const clientHeight = container.clientHeight
+    
+    // Show button if user has scrolled up more than 100px from bottom
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 100
+    setShowScrollButton(!isNearBottom)
+    
+    // Update auto-scroll preference based on user behavior
+    setAutoScroll(isNearBottom)
+  }
+
+  // Auto-scroll to bottom when new messages arrive (only if user is near bottom)
+  useEffect(() => {
+    if (messages.length > 0 && autoScroll) {
+      scrollToBottom()
+      // Additional scroll attempt after a short delay
+      setTimeout(() => scrollToBottom(false), 50)
+    }
+  }, [messages, autoScroll])
+
+  // Scroll to bottom on initial load and room change
+  useEffect(() => {
+    if (currentRoom && messages.length > 0) {
+      // Always scroll to bottom when entering a room or on refresh
+      setTimeout(() => scrollToBottom(false), 100)
+      setAutoScroll(true)
+      setShowScrollButton(false)
+    }
+  }, [currentRoom?.id, messages.length])
+
+  // Enhanced auto-scroll on page load/refresh - triggers when messages are actually loaded
+  useEffect(() => {
+    if (messages.length > 0 && currentRoom?.id) {
+      // Force scroll to bottom on initial load with multiple attempts
+      const scrollAttempts = [0, 50, 100, 200, 500, 1000]
+      scrollAttempts.forEach(delay => {
+        setTimeout(() => {
+          if (messagesEndRef.current) {
+            messagesEndRef.current.scrollIntoView({ behavior: 'auto', block: 'end' })
+          }
+          if (messagesContainerRef.current) {
+            const container = messagesContainerRef.current
+            container.scrollTop = container.scrollHeight
+          }
+          setAutoScroll(true)
+          setShowScrollButton(false)
+        }, delay)
+      })
+    }
+  }, [messages.length, currentRoom?.id]) // Fixed dependency - trigger when messages change or room changes
+
+  // Additional effect for initial page load - ensure scroll on very first load
+  useEffect(() => {
+    if (currentRoom?.id && messages.length === 0) {
+      // Wait a bit longer for messages to load on fresh page load
+      const timeout = setTimeout(() => {
+        scrollToBottom(false)
+        setAutoScroll(true)
+      }, 1500)
+      return () => clearTimeout(timeout)
+    }
+  }, [currentRoom?.id])
+
+  // Add scroll listener to messages container
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    if (!container) return
+
+    container.addEventListener('scroll', checkScrollPosition)
+    return () => container.removeEventListener('scroll', checkScrollPosition)
+  }, [currentRoom])
+
+  // Auto-join PUBLIC room for first-time users
+  useEffect(() => {
+    if (user && rooms.length > 0 && !currentRoom) {
+      const publicRoom = rooms.find((room: any) => room.code === 'PUBLIC')
       if (publicRoom) {
         setCurrentRoom(publicRoom)
       }
     }
-  }, [rooms, currentRoom, setCurrentRoom])
-  
-  // Load messages for current room
-  useLoadMessages(currentRoom?.id || null)
-  
-  // Set up real-time messaging
-  useRealTimeMessages(currentRoom?.id || null)
-  
-  // Auto-scroll to bottom when new messages arrive
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-  
+  }, [user, rooms, currentRoom, setCurrentRoom])
+
+  const startTyping = () => {
+    if (!user || !currentRoom) return
+    
+    // Local typing state
+    setTypingStatus(prev => ({ ...prev, [user.id]: true }))
+    
+    // Broadcast to other users
+    broadcastStartTyping()
+    
+    if (typingTimeout) {
+      clearTimeout(typingTimeout)
+    }
+    
+    const timeout = setTimeout(() => {
+      stopTyping()
+    }, 2000)
+    
+    setTypingTimeout(timeout)
+  }
+
+  const stopTyping = () => {
+    if (!user) return
+    
+    // Local typing state
+    setTypingStatus(prev => ({ ...prev, [user.id]: false }))
+    
+    // Broadcast to other users
+    broadcastStopTyping()
+    
+    if (typingTimeout) {
+      clearTimeout(typingTimeout)
+      setTypingTimeout(null)
+    }
+  }
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!messageText.trim() || !user) return
-    
-    // Stop typing indicator before sending
+    if (!messageText.trim() || !currentRoom || !user) return
+
+    // Stop typing indicator when sending message
     stopTyping()
-    
+
     const success = await sendMessage(messageText, user.id)
     if (success) {
       setMessageText('')
@@ -124,7 +247,6 @@ export default function ChatPage() {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setMessageText(e.target.value)
     
-    // Start typing indicator when user types
     if (e.target.value.length > 0) {
       startTyping()
     } else {
@@ -133,7 +255,6 @@ export default function ChatPage() {
   }
 
   const handleInputBlur = () => {
-    // Stop typing when input loses focus
     stopTyping()
   }
   
@@ -145,48 +266,19 @@ export default function ChatPage() {
     if (room) {
       setNewRoomName('')
       setShowCreateRoom(false)
-      setCurrentRoom(room)
     }
   }
-  
+
+  const handleRefreshMessages = () => {
+    if (currentRoom) {
+      // Refresh is handled automatically by the real-time subscription
+      window.location.reload()
+    }
+  }
+
   const handleLogout = async () => {
-    const supabase = createClient()
     await supabase.auth.signOut()
     router.push('/login')
-  }
-  
-  const handleRefreshMessages = () => {
-    setLastRefresh(new Date())
-    // This will trigger useLoadMessages to reload
-    if (currentRoom) {
-      window.location.reload() // Simple refresh for now
-    }
-  }
-  
-  const handleDeleteRoom = async (roomId: string) => {
-    if (!user) return
-    
-    const confirmed = window.confirm('Are you sure you want to delete this room? This action cannot be undone.')
-    if (!confirmed) return
-    
-    const success = await deleteRoom(roomId, user.id)
-    if (success) {
-      // Room deleted, current room will be cleared by the hook
-      setError(null)
-    }
-  }
-  
-  const handleLeaveRoom = async (roomId: string) => {
-    if (!user) return
-    
-    const confirmed = window.confirm('Are you sure you want to leave this room?')
-    if (!confirmed) return
-    
-    const success = await leaveRoom(roomId, user.id)
-    if (success) {
-      // Room left, current room will be cleared by the hook  
-      setError(null)
-    }
   }
 
   const handleStartEdit = (messageId: string, content: string) => {
@@ -194,90 +286,203 @@ export default function ChatPage() {
     setEditingText(content)
   }
 
-  const handleCancelEdit = () => {
-    setEditingMessageId(null)
-    setEditingText('')
-  }
-
   const handleSaveEdit = async (messageId: string) => {
-    if (!editingText.trim()) return
+    if (!editingText.trim() || isSavingEdit) return
+    
+    setIsSavingEdit(true)
     
     try {
-      const supabase = createClient()
-      const { error } = await supabase
+      console.log('💾 Saving edited message:', messageId, 'New content:', editingText)
+      
+      // Try to update with edited_at first, fallback to just content if column doesn't exist
+      let { error } = await supabase
         .from('messages')
-        .update({ content: editingText.trim() })
+        .update({ content: editingText, edited_at: new Date().toISOString() })
         .eq('id', messageId)
         .eq('user_id', user.id) // Ensure user can only edit their own messages
       
-      if (error) throw error
+      // If edited_at column doesn't exist, try without it
+      if (error && error.message.includes('edited_at')) {
+        console.log('⚠️ edited_at column not found, updating without it')
+        const { error: fallbackError } = await supabase
+          .from('messages')
+          .update({ content: editingText })
+          .eq('id', messageId)
+          .eq('user_id', user.id)
+        error = fallbackError
+      }
       
-      // Update local state - this will be handled by real-time updates
+      if (error) {
+        console.error('❌ Error updating message:', error)
+        alert(`Failed to save message: ${error.message}`)
+        return
+      }
+      
+      console.log('✅ Message updated successfully')
+      
+      // Also update the store immediately for instant UI feedback
+      const { updateMessage } = useChatStore.getState()
+      const updateData: any = { content: editingText }
+      // Only add edited_at if we know the column exists (successful DB update)
+      if (!error) {
+        updateData.edited_at = new Date().toISOString()
+      }
+      updateMessage(messageId, updateData)
+      
+      // Clear editing state
       setEditingMessageId(null)
       setEditingText('')
-    } catch (error: any) {
+      
+    } catch (error) {
       console.error('Error editing message:', error)
-      setError(`Failed to edit message: ${error.message}`)
+      alert('Failed to save message. Please try again.')
+    } finally {
+      setIsSavingEdit(false)
     }
   }
 
+  const handleCancelEdit = () => {
+    setEditingMessageId(null)
+    setEditingText('')
+    setIsSavingEdit(false)
+  }
+
   const handleDeleteMessage = async (messageId: string) => {
-    if (!user) return
-    
-    const confirmed = window.confirm('Are you sure you want to delete this message?')
-    if (!confirmed) return
-    
     try {
-      const supabase = createClient()
-      const { error } = await supabase
-        .from('messages')
-        .delete()
-        .eq('id', messageId)
-        .eq('user_id', user.id) // Ensure user can only delete their own messages
+      const confirmed = await showConfirmation({
+        title: 'Delete Message',
+        message: 'Are you sure you want to delete this message? This action cannot be undone.',
+        type: 'delete'
+      })
       
-      if (error) throw error
-      
-      // Message will be removed by real-time updates
-    } catch (error: any) {
+      if (confirmed) {
+        console.log('🗑️ Attempting to delete message:', messageId)
+        
+        const { error } = await supabase
+          .from('messages')
+          .delete()
+          .eq('id', messageId)
+        
+        if (!error) {
+          console.log('✅ Message deleted successfully from database')
+          
+          // IMMEDIATE UI UPDATE: Don't wait for real-time, update immediately
+          // Import the store methods
+          const { deleteMessage: deleteFromStore } = useChatStore.getState()
+          deleteFromStore(messageId)
+          console.log('✅ Message removed from UI immediately')
+          
+        } else {
+          console.error('❌ Failed to delete message:', error)
+        }
+      }
+    } catch (error) {
       console.error('Error deleting message:', error)
-      setError(`Failed to delete message: ${error.message}`)
+    }
+  }
+
+  const handleDeleteRoom = async (roomId: string, roomName: string) => {
+    try {
+      const confirmed = await showConfirmation({
+        title: 'Delete Room',
+        message: `Are you sure you want to delete the room "${roomName}"? This will permanently delete all messages and remove all members. This action cannot be undone.`,
+        type: 'delete'
+      })
+      
+      if (confirmed) {
+        const success = await deleteRoom(roomId, user.id)
+        if (success) {
+          // If we're currently in the deleted room, switch to PUBLIC room
+          if (currentRoom?.id === roomId) {
+            const publicRoom = rooms.find((room: any) => room.code === 'PUBLIC')
+            if (publicRoom) {
+              setCurrentRoom(publicRoom)
+            } else {
+              setCurrentRoom(null)
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error deleting room:', error)
+    }
+  }
+
+  const handleJumpToMessage = async (messageId: string, roomId: string) => {
+    try {
+      // First, switch to the correct room if we're not already in it
+      if (currentRoom?.id !== roomId) {
+        const targetRoom = rooms.find(room => room.id === roomId)
+        if (targetRoom) {
+          setCurrentRoom(targetRoom)
+          // Wait a bit for the room to load and render
+          await new Promise(resolve => setTimeout(resolve, 500))
+        }
+      }
+
+      // Try to scroll to the message
+      const messageElement = document.querySelector(`[data-message-id="${messageId}"]`)
+      if (messageElement) {
+        // Scroll to the message
+        messageElement.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'center' 
+        })
+        
+        // Highlight the message temporarily
+        setHighlightedMessageId(messageId)
+        setTimeout(() => setHighlightedMessageId(null), 3000)
+      } else {
+        // Message not found in current view, might need to load more messages
+        console.log('Message not found in current view:', messageId)
+        // Could implement loading older messages here if needed
+      }
+      
+      // Close search panel after navigation
+      setShowSearch(false)
+    } catch (error) {
+      console.error('Error jumping to message:', error)
     }
   }
 
   if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-900">
-        <div className="text-lg text-gray-300">Loading...</div>
+      <div className="chat-container flex items-center justify-center min-h-screen">
+        <div className="text-lg text-secondary">Loading...</div>
       </div>
     )
   }
   
   return (
-    <div className="h-screen flex bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+    <div className="chat-container flex h-screen">
       {/* Sidebar - Rooms */}
-      <div className="w-64 bg-gray-800/90 backdrop-blur-sm border-r border-gray-700/50 flex flex-col shadow-2xl">
-        <div className="p-4 border-b border-gray-700/50 bg-gradient-to-r from-gray-800 to-gray-700">
-          <h2 className="text-lg font-bold text-gray-100 flex items-center gap-2">
-            <MessageCircle size={20} className="text-blue-400 drop-shadow-lg" />
-            <span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+      <div className="w-64 chat-sidebar flex flex-col shadow-2xl">
+        <div className="p-4 chat-header border-b border-primary">
+          <div className="flex items-center gap-3 mb-3">
+            <MessageCircle size={20} className="text-blue-600 drop-shadow-lg" />
+            <span className="text-lg font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
               Chat App
             </span>
-          </h2>
-          <p className="text-sm text-gray-400 truncate mt-1">
-            {user.user_metadata?.name || user.email}
-          </p>
+          </div>
+          <div className="flex items-center gap-2 mb-2">
+            <StatusIndicator status={userStatus} size="sm" />
+            <p className="text-sm text-secondary truncate flex-1">
+              {user.user_metadata?.name || user.email}
+            </p>
+          </div>
+          <StatusSelector currentUser={user} />
         </div>
         
-        <div className="flex-1 overflow-y-auto sidebar-scroll">
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
           <div className="p-4">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">Rooms</h3>
+              <h3 className="text-sm font-semibold text-muted uppercase tracking-wide">Rooms</h3>
               <div className="flex gap-1">
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={() => router.push('/join')}
-                  className="text-xs flex items-center gap-1 bg-gradient-to-r from-gray-700 to-gray-600 border-gray-600 text-gray-300 hover:from-gray-600 hover:to-gray-500 hover:text-gray-100 transition-all duration-200 rounded-lg shadow-lg"
+                  className="btn-secondary text-xs flex items-center gap-1 rounded-lg"
                   title="Join room by code"
                 >
                   <Link2 size={14} />
@@ -287,7 +492,7 @@ export default function ChatPage() {
                   size="sm"
                   variant="outline"
                   onClick={() => setShowCreateRoom(true)}
-                  className="text-xs flex items-center gap-1 bg-gradient-to-r from-gray-700 to-gray-600 border-gray-600 text-gray-300 hover:from-gray-600 hover:to-gray-500 hover:text-gray-100 transition-all duration-200 rounded-lg shadow-lg"
+                  className="btn-secondary text-xs flex items-center gap-1 rounded-lg"
                 >
                   <Plus size={14} />
                   New
@@ -297,18 +502,18 @@ export default function ChatPage() {
             
             {/* Create Room Form */}
             {showCreateRoom && (
-              <div className="mb-4 p-4 bg-gradient-to-r from-gray-700 to-gray-600 rounded-xl shadow-lg border border-gray-600/50">
+              <div className="mb-4 p-4 card rounded-xl fade-in">
                 <form onSubmit={handleCreateRoom} className="space-y-3">
                   <input
                     type="text"
                     value={newRoomName}
                     onChange={(e) => setNewRoomName(e.target.value)}
                     placeholder="Room name"
-                    className="w-full p-3 text-sm border border-gray-500 rounded-lg bg-gray-800/80 text-gray-100 placeholder-gray-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-400/30 transition-all duration-200"
+                    className="w-full p-3 text-sm chat-input rounded-lg"
                     autoFocus
                   />
                   <div className="flex gap-2">
-                    <Button type="submit" size="sm" className="text-xs flex items-center gap-1 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg transition-all duration-200">
+                    <Button type="submit" size="sm" className="btn-primary text-xs flex items-center gap-1">
                       <Check size={12} />
                       Create
                     </Button>
@@ -320,7 +525,7 @@ export default function ChatPage() {
                         setShowCreateRoom(false)
                         setNewRoomName('')
                       }}
-                      className="text-xs flex items-center gap-1 bg-gray-600/80 border-gray-500 text-gray-300 hover:bg-gray-500 transition-all duration-200"
+                      className="btn-secondary text-xs flex items-center gap-1"
                     >
                       <X size={12} />
                       Cancel
@@ -330,15 +535,13 @@ export default function ChatPage() {
               </div>
             )}
             
-            {/* Room List */}
+            {/* Room Items */}
             <div className="space-y-2">
-              {rooms.map((room) => (
+              {rooms.map((room: any) => (
                 <div
                   key={room.id}
-                  className={`group flex items-center gap-3 p-3 rounded-xl text-sm transition-all duration-200 shadow-lg ${
-                    currentRoom?.id === room.id
-                      ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-blue-100 shadow-blue-500/25'
-                      : 'hover:bg-gradient-to-r hover:from-gray-700 hover:to-gray-600 text-gray-300 bg-gray-800/50 backdrop-blur-sm'
+                  className={`room-item group flex items-center gap-3 p-3 rounded-xl text-sm transition-all duration-200 ${
+                    currentRoom?.id === room.id ? 'active' : ''
                   }`}
                 >
                   <button
@@ -346,9 +549,7 @@ export default function ChatPage() {
                     className="flex-1 text-left"
                   >
                     <div className="font-semibold">{room.name}</div>
-                    <div className={`text-xs flex items-center gap-1 ${
-                      currentRoom?.id === room.id ? 'text-blue-200' : 'text-gray-400'
-                    }`}>
+                    <div className="text-xs flex items-center gap-1 text-muted">
                       <Hash size={10} />
                       {room.code}
                     </div>
@@ -357,29 +558,24 @@ export default function ChatPage() {
                   {/* Room Actions */}
                   {user && room.code !== 'PUBLIC' && (
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                      {room.created_by === user.id ? (
-                        // Delete button for room creator (admin)
+                      {/* Delete room button - only for room owners */}
+                      {room.created_by === user.id && (
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleDeleteRoom(room.id)
-                          }}
-                          className="p-2 text-red-400 hover:bg-red-900/50 rounded-lg transition-all duration-200 hover:scale-110"
+                          onClick={() => handleDeleteRoom(room.id, room.name)}
+                          className="p-1 btn-secondary rounded hover:bg-red-500 hover:text-white transition-colors"
                           title="Delete room"
                         >
-                          <Trash2 size={14} />
+                          <Trash2 size={12} />
                         </button>
-                      ) : (
-                        // Leave button for members
+                      )}
+                      {/* Leave room button - only for non-owners */}
+                      {room.created_by !== user.id && (
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleLeaveRoom(room.id)
-                          }}
-                          className="p-2 text-orange-400 hover:bg-orange-900/50 rounded-lg transition-all duration-200 hover:scale-110"
+                          onClick={() => leaveRoom(room.id, user.id)}
+                          className="p-1 btn-secondary rounded hover:bg-orange-500 hover:text-white transition-colors"
                           title="Leave room"
                         >
-                          <DoorOpen size={14} />
+                          <LogOut size={12} />
                         </button>
                       )}
                     </div>
@@ -389,157 +585,141 @@ export default function ChatPage() {
             </div>
           </div>
         </div>
-        
+
         {/* Online Users */}
         {currentRoom && user && (
           <OnlineUsers users={onlineUsers} currentUserId={user.id} />
         )}
         
-        <div className="p-4 border-t border-gray-700/50 bg-gradient-to-r from-gray-800 to-gray-700">
+        <div className="p-4 chat-header border-t border-primary">
           <Button
             onClick={handleLogout}
             variant="outline"
             size="sm"
-            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-gray-700 to-gray-600 border-gray-600 text-gray-300 hover:from-gray-600 hover:to-gray-500 hover:text-gray-100 transition-all duration-200 rounded-lg shadow-lg"
+            className="btn-secondary w-full flex items-center justify-center gap-2 rounded-lg"
           >
             <LogOut size={16} />
             Logout
           </Button>
         </div>
       </div>
-      
+
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col">
         {/* Chat Header */}
-        <div className="bg-gradient-to-r from-gray-800 to-gray-700 border-b border-gray-700/50 p-4 shadow-lg">
+        <div className="chat-header p-4 shadow-lg">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-xl font-bold text-gray-100 flex items-center gap-3">
+              <h1 className="text-xl font-bold text-primary flex items-center gap-3">
                 <div className="p-2 bg-blue-500/20 rounded-lg">
-                  <MessageCircle size={24} className="text-blue-400" />
+                  <MessageCircle size={24} className="text-blue-600" />
                 </div>
-                <span className="bg-gradient-to-r from-gray-100 to-gray-300 bg-clip-text text-transparent">
+                <span className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
                   {currentRoom?.name || 'Select a room'}
                 </span>
-                {/* Connection Status Indicator */}
-                {currentRoom && (
-                  <div className={`ml-3 flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
-                    error && (error.includes('failed') || error.includes('No internet') || error.includes('timed out'))
-                      ? 'bg-red-900/50 text-red-300'
-                      : error && (error.includes('Reconnecting') || error.includes('Attempting'))
-                      ? 'bg-yellow-900/50 text-yellow-300'
-                      : 'bg-green-900/50 text-green-300'
-                  }`}>
-                    {error && (error.includes('failed') || error.includes('No internet') || error.includes('timed out')) ? (
-                      <WifiOff size={12} />
-                    ) : error && (error.includes('Reconnecting') || error.includes('Attempting')) ? (
-                      <div className="animate-spin rounded-full h-3 w-3 border border-yellow-400 border-t-transparent"></div>
-                    ) : (
-                      <Wifi size={12} />
-                    )}
-                    <span>
-                      {error && (error.includes('failed') || error.includes('No internet') || error.includes('timed out'))
-                        ? 'Offline'
-                        : error && (error.includes('Reconnecting') || error.includes('Attempting'))
-                        ? 'Connecting'
-                        : 'Connected'
-                      }
-                    </span>
-                  </div>
-                )}
               </h1>
               {currentRoom && (
-                <p className="text-sm text-gray-400 flex items-center gap-2 ml-12 mt-1">
+                <p className="text-sm text-secondary flex items-center gap-2 ml-12 mt-1">
                   <Hash size={12} />
-                  <span className="font-mono bg-gray-700 px-2 py-1 rounded text-xs">
+                  <span className="font-mono card px-2 py-1 rounded text-xs">
                     {currentRoom.code}
                   </span>
                 </p>
               )}
             </div>
-            {currentRoom && (
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleRefreshMessages}
-                  title="Refresh messages"
-                  className="flex items-center gap-2 bg-gray-700/80 border-gray-600 text-gray-300 hover:bg-gray-600 transition-all duration-200 rounded-lg shadow-lg backdrop-blur-sm"
-                >
-                  <RefreshCw size={14} />
-                  Refresh
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setShowRoomShare(!showRoomShare)}
-                  className="flex items-center gap-2 bg-gray-700/80 border-gray-600 text-gray-300 hover:bg-gray-600 transition-all duration-200 rounded-lg shadow-lg backdrop-blur-sm"
-                >
-                  <Share2 size={14} />
-                  Share
-                </Button>
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              {/* Notification Settings */}
+              <NotificationSettings />
+              
+              {/* Theme Toggle - Always visible */}
+              <SimpleThemeToggle />
+              
+              {/* Room-specific buttons */}
+              {currentRoom && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowSearch(!showSearch)}
+                    title={showSearch ? "Hide search" : "Search messages"}
+                    className="btn-secondary flex items-center gap-2 rounded-lg"
+                  >
+                    <Search size={14} />
+                    Search
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleRefreshMessages}
+                    title="Refresh messages"
+                    className="btn-secondary flex items-center gap-2 rounded-lg"
+                  >
+                    <RefreshCw size={14} />
+                    Refresh
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowRoomShare(!showRoomShare)}
+                    className="btn-secondary flex items-center gap-2 rounded-lg"
+                  >
+                    <Share2 size={14} />
+                    Share
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setIsRightSidebarCollapsed(!isRightSidebarCollapsed)}
+                    title={isRightSidebarCollapsed ? "Show room info" : "Hide room info"}
+                    className="btn-secondary flex items-center gap-2 rounded-lg"
+                  >
+                    {isRightSidebarCollapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+                    Info
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
           
           {/* Room Share Panel */}
           {showRoomShare && currentRoom && (
-            <div className="mt-4">
+            <div className="mt-4 fade-in">
               <RoomShare roomCode={currentRoom.code} roomName={currentRoom.name} />
+            </div>
+          )}
+          
+          {/* Search Panel */}
+          {showSearch && currentRoom && (
+            <div className="mt-4 fade-in">
+              <MessageSearch 
+                currentUser={user}
+                currentRoom={currentRoom}
+                onJumpToMessage={handleJumpToMessage}
+              />
             </div>
           )}
         </div>
         
-        {/* Error Display */}
-        {error && (
-          <div className={`border px-4 py-3 mx-4 mt-4 rounded-lg shadow-lg ${
-            error.includes('Reconnecting') || error.includes('Attempting') || error.includes('Back online')
-              ? 'bg-yellow-900/50 border-yellow-700 text-yellow-300'
-              : error.includes('No internet')
-              ? 'bg-orange-900/50 border-orange-700 text-orange-300'
-              : 'bg-red-900/50 border-red-700 text-red-300'
-          }`}>
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                {(error.includes('Reconnecting') || error.includes('Attempting')) && (
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-400"></div>
-                )}
-                <span className="text-sm font-medium">{error}</span>
-              </div>
-              <button
-                onClick={() => setError(null)}
-                className={`hover:scale-110 transition-transform ${
-                  error.includes('Reconnecting') || error.includes('Attempting') || error.includes('Back online')
-                    ? 'text-yellow-400 hover:text-yellow-300'
-                    : error.includes('No internet')
-                    ? 'text-orange-400 hover:text-orange-300'
-                    : 'text-red-400 hover:text-red-300'
-                }`}
-              >
-                ×
-              </button>
-            </div>
-          </div>
-        )}
-        
         {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gradient-to-b from-gray-900 to-gray-800 chat-messages">
+        <div className="flex-1 relative">
+          <div 
+            ref={messagesContainerRef}
+            className="h-full overflow-y-auto p-6 space-y-4 chat-messages custom-scrollbar"
+          >
           {isLoading ? (
-            <div className="text-center text-gray-400 py-8">
+            <div className="text-center text-secondary py-8">
               <div className="inline-flex items-center gap-2">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-400"></div>
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
                 Loading messages...
               </div>
             </div>
           ) : messages.length === 0 ? (
-            <div className="text-center text-gray-400 py-12">
-              <MessageCircle size={48} className="mx-auto mb-4 text-gray-600" />
-              <p className="text-lg font-medium">No messages yet</p>
-              <p className="text-sm">Start the conversation! 👋</p>
+            <div className="text-center text-muted py-8">
+              <MessageCircle size={48} className="mx-auto mb-4 opacity-50" />
+              <p>No messages yet. Start the conversation!</p>
             </div>
           ) : (
-            messages.map((message) => {
-              // Get display name with proper logic
+            messages.map((message: any) => {
               const isCurrentUser = message.user_id === user?.id
               const displayName = isCurrentUser 
                 ? 'You' 
@@ -549,9 +729,16 @@ export default function ChatPage() {
                 : (message.profiles?.username?.[0]?.toUpperCase() || '?')
               
               const isEditing = editingMessageId === message.id
+              const isHighlighted = highlightedMessageId === message.id
               
               return (
-                <div key={message.id} className={`group flex gap-4 ${isCurrentUser ? 'flex-row-reverse' : ''}`}>
+                <div 
+                  key={message.id} 
+                  data-message-id={message.id}
+                  className={`group flex gap-4 fade-in transition-all duration-500 ${
+                    isCurrentUser ? 'flex-row-reverse' : ''
+                  } ${isHighlighted ? 'bg-yellow-100 dark:bg-yellow-900/20 p-3 rounded-lg border border-yellow-300 dark:border-yellow-700' : ''}`}
+                >
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold shadow-lg ${
                     isCurrentUser 
                       ? 'bg-gradient-to-br from-green-500 to-green-600' 
@@ -559,26 +746,26 @@ export default function ChatPage() {
                   }`}>
                     {avatarLetter}
                   </div>
-                  <div className={`flex-1 max-w-[70%] ${isCurrentUser ? 'items-end' : 'items-start'}`}>
+                  <div className={`flex flex-col min-w-0 ${isCurrentUser ? 'items-end' : 'items-start'}`}>
                     <div className={`flex items-center gap-2 mb-2 ${isCurrentUser ? 'flex-row-reverse' : ''}`}>
                       <span className={`font-semibold text-sm ${
-                        isCurrentUser ? 'text-green-400' : 'text-blue-400'
+                        isCurrentUser ? 'text-green-600' : 'text-blue-600'
                       }`}>
                         {displayName}
                       </span>
-                      <span className="text-xs text-gray-500">
+                      <span className="text-xs text-muted">
                         {new Date(message.created_at).toLocaleTimeString()}
                       </span>
                     </div>
                     
-                    <div className={`relative group/message ${isCurrentUser ? 'ml-8' : 'mr-8'}`}>
+                    <div className="relative group/message">
                       {isEditing ? (
-                        <div className="space-y-2">
+                        <div className="space-y-2 fade-in w-full max-w-md">
                           <input
                             type="text"
                             value={editingText}
                             onChange={(e) => setEditingText(e.target.value)}
-                            className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:border-blue-400 focus:ring-2 focus:ring-blue-400/30"
+                            className="w-full p-3 chat-input rounded-lg"
                             autoFocus
                             aria-label="Edit message"
                             onKeyDown={(e) => {
@@ -590,16 +777,17 @@ export default function ChatPage() {
                             <Button
                               size="sm"
                               onClick={() => handleSaveEdit(message.id)}
-                              className="text-xs bg-green-600 hover:bg-green-700 text-white"
+                              disabled={isSavingEdit || !editingText.trim()}
+                              className="btn-primary text-xs"
                             >
                               <Save size={12} className="mr-1" />
-                              Save
+                              {isSavingEdit ? 'Saving...' : 'Save'}
                             </Button>
                             <Button
                               size="sm"
                               variant="outline"
                               onClick={handleCancelEdit}
-                              className="text-xs bg-gray-600 border-gray-500 text-gray-300"
+                              className="btn-secondary text-xs"
                             >
                               <X size={12} className="mr-1" />
                               Cancel
@@ -608,27 +796,33 @@ export default function ChatPage() {
                         </div>
                       ) : (
                         <>
-                          <div className={`p-4 rounded-2xl shadow-lg backdrop-blur-sm ${
+                          <div className={`p-4 rounded-2xl shadow-lg ${
                             isCurrentUser
-                              ? 'bg-gradient-to-br from-green-600 to-green-700 text-green-100'
-                              : 'bg-gradient-to-br from-gray-700 to-gray-600 text-gray-100'
+                              ? 'message-bubble-own'
+                              : 'message-bubble-other'
                           }`}>
                             <div className="text-sm leading-relaxed">{message.content}</div>
                           </div>
                           
+                          {/* Message Reactions */}
+                          <MessageReactions 
+                            messageId={message.id} 
+                            isOwnMessage={isCurrentUser}
+                          />
+                          
                           {/* Message Actions */}
                           {isCurrentUser && (
-                            <div className={`absolute top-0 ${isCurrentUser ? 'left-0 -translate-x-full' : 'right-0 translate-x-full'} flex gap-1 opacity-0 group-hover/message:opacity-100 transition-all duration-200 pr-2`}>
+                            <div className={`absolute -top-2 ${isCurrentUser ? '-left-16' : '-right-16'} flex gap-1 opacity-0 group-hover/message:opacity-100 transition-all duration-200`}>
                               <button
                                 onClick={() => handleStartEdit(message.id, message.content)}
-                                className="p-2 bg-gray-600 hover:bg-blue-600 text-gray-300 hover:text-white rounded-lg transition-all duration-200 shadow-lg"
+                                className="btn-secondary p-2 rounded-lg hover:bg-blue-500 hover:text-white"
                                 title="Edit message"
                               >
                                 <Edit3 size={14} />
                               </button>
                               <button
                                 onClick={() => handleDeleteMessage(message.id)}
-                                className="p-2 bg-gray-600 hover:bg-red-600 text-gray-300 hover:text-white rounded-lg transition-all duration-200 shadow-lg"
+                                className="btn-secondary p-2 rounded-lg hover:bg-red-500 hover:text-white"
                                 title="Delete message"
                               >
                                 <Trash2 size={14} />
@@ -644,14 +838,15 @@ export default function ChatPage() {
             })
           )}
           <div ref={messagesEndRef} />
+          </div>
         </div>
-        
+
         {/* Typing Indicator */}
         <TypingIndicator />
-        
+
         {/* Message Input */}
         {currentRoom && (
-          <div className="bg-gradient-to-r from-gray-800 to-gray-700 border-t border-gray-700/50 p-6 shadow-lg">
+          <div className="chat-input-area p-6">
             <form onSubmit={handleSendMessage} className="flex gap-3 items-stretch">
               <input
                 type="text"
@@ -659,13 +854,28 @@ export default function ChatPage() {
                 onChange={handleInputChange}
                 onBlur={handleInputBlur}
                 placeholder="Type your message..."
-                className="flex-1 p-4 border border-gray-600 rounded-2xl bg-gray-700/80 text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 backdrop-blur-sm shadow-lg"
+                className="flex-1 p-4 chat-input rounded-2xl shadow-lg"
                 disabled={isLoading}
               />
+              
+              {/* Scroll to Bottom Button beside Send */}
+              <button
+                type="button"
+                onClick={() => {
+                  scrollToBottom()
+                  setShowScrollButton(false)
+                  setAutoScroll(true)
+                }}
+                className="bg-gray-500 hover:bg-gray-600 text-white p-4 rounded-2xl shadow-lg transition-all duration-200 flex items-center justify-center"
+                title="Scroll to bottom"
+              >
+                <ChevronDown size={18} />
+              </button>
+              
               <Button
                 type="submit"
                 disabled={!messageText.trim() || isLoading}
-                className="p-4 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white flex items-center gap-2 rounded-2xl shadow-lg transition-all duration-200 disabled:opacity-50"
+                className="btn-primary p-4 flex items-center gap-2 rounded-2xl shadow-lg disabled:opacity-50"
               >
                 <Send size={18} />
                 <span className="hidden sm:inline">Send</span>
@@ -674,6 +884,21 @@ export default function ChatPage() {
           </div>
         )}
       </div>
+
+      {/* Right Sidebar - Room Info */}
+      {currentRoom && user && !isRightSidebarCollapsed && (
+        <div className="w-80 chat-sidebar flex flex-col shadow-2xl border-l border-primary">
+          <div className="p-4 h-full overflow-y-auto custom-scrollbar">
+            <RoomInfo room={currentRoom} currentUserId={user.id} />
+          </div>
+        </div>
+      )}
+      
+      {/* Confirmation Dialog */}
+      <ConfirmationComponent />
+      
+      {/* Cache Demo (Development Only) */}
+      <CacheDemo />
     </div>
   )
 }

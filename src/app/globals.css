@@ -1,21 +1,365 @@
 @import "tailwindcss";
 
+/* =================================
+   🎨 COMPREHENSIVE THEME SYSTEM
+   ================================= */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Light Theme Colors */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-tertiary: #f1f5f9;
+  --bg-card: #ffffff;
+  --bg-sidebar: #ffffff;
+  --bg-header: #f8fafc;
+  --bg-input: #ffffff;
+  --bg-button: #e2e8f0;
+  --bg-button-hover: #cbd5e1;
+  --bg-message-own: #22c55e;
+  --bg-message-other: #e2e8f0;
+  --bg-message-hover: #f1f5f9;
+  
+  /* Light Theme Text */
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-tertiary: #64748b;
+  --text-muted: #94a3b8;
+  --text-inverse: #ffffff;
+  --text-message-own: #ffffff;
+  --text-message-other: #0f172a;
+  
+  /* Light Theme Borders */
+  --border-primary: #e2e8f0;
+  --border-secondary: #cbd5e1;
+  --border-focus: #3b82f6;
+  
+  /* Light Theme Shadows */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+  
+  /* Interactive States */
+  --accent-primary: #3b82f6;
+  --accent-secondary: #10b981;
+  --accent-danger: #ef4444;
+  --accent-warning: #f59e0b;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+.dark {
+  /* Dark Theme Colors */
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+  --bg-card: #1e293b;
+  --bg-sidebar: #1e293b;
+  --bg-header: #334155;
+  --bg-input: #334155;
+  --bg-button: #475569;
+  --bg-button-hover: #64748b;
+  --bg-message-own: #16a34a;
+  --bg-message-other: #374151;
+  --bg-message-hover: #4b5563;
+  
+  /* Dark Theme Text */
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-tertiary: #94a3b8;
+  --text-muted: #64748b;
+  --text-inverse: #0f172a;
+  --text-message-own: #ffffff;
+  --text-message-other: #f8fafc;
+  
+  /* Dark Theme Borders */
+  --border-primary: #374151;
+  --border-secondary: #4b5563;
+  --border-focus: #60a5fa;
+  
+  /* Dark Theme Shadows */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.5);
+}
+
+/* =================================
+   🏗️ BASE STYLES
+   ================================= */
+
+* {
+  box-sizing: border-box;
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, sans-serif;
+  line-height: 1.6;
+  margin: 0;
+  padding: 0;
+}
+
+/* =================================
+   📱 COMPONENT CLASSES
+   ================================= */
+
+.chat-container {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+}
+
+.chat-sidebar {
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-primary);
+}
+
+.chat-header {
+  background: var(--bg-header);
+  border-bottom: 1px solid var(--border-primary);
+  color: var(--text-primary);
+}
+
+.chat-messages {
+  background: var(--bg-secondary);
+}
+
+.chat-input-area {
+  background: var(--bg-header);
+  border-top: 1px solid var(--border-primary);
+}
+
+.chat-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+}
+
+.chat-input:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--border-focus) 20%, transparent);
+}
+
+.chat-input::placeholder {
+  color: var(--text-muted);
+}
+
+.message-bubble-own {
+  background: var(--bg-message-own);
+  color: var(--text-message-own);
+  display: inline-block;
+  max-width: min(400px, 80vw);
+  width: fit-content;
+  word-wrap: break-word;
+  word-break: break-word;
+  hyphens: auto;
+  white-space: pre-wrap;
+}
+
+.message-bubble-other {
+  background: var(--bg-message-other);
+  color: var(--text-message-other);
+  display: inline-block;
+  max-width: min(400px, 80vw);
+  width: fit-content;
+  word-wrap: break-word;
+  word-break: break-word;
+  hyphens: auto;
+  white-space: pre-wrap;
+}
+
+/* Responsive message bubbles */
+@media (max-width: 640px) {
+  .message-bubble-own,
+  .message-bubble-other {
+    max-width: min(280px, 75vw);
+  }
+}
+
+.message-bubble-other:hover {
+  background: var(--bg-message-hover);
+}
+
+.btn-primary {
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  border: 1px solid var(--accent-primary);
+}
+
+.btn-primary:hover {
+  background: color-mix(in srgb, var(--accent-primary) 80%, black);
+}
+
+.btn-secondary {
+  background: var(--bg-button);
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-button-hover);
+}
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-primary);
+  box-shadow: var(--shadow-md);
+}
+
+.room-item {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
+}
+
+.room-item:hover {
+  background: var(--bg-button-hover);
+}
+
+.room-item.active {
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+}
+
+/* =================================
+   🎯 SCROLLBAR STYLING
+   ================================= */
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: var(--bg-tertiary);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--bg-button);
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--bg-button-hover);
+}
+
+/* Firefox scrollbar */
+@supports (scrollbar-width: thin) {
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: var(--bg-button) var(--bg-tertiary);
+  }
+}
+
+/* =================================
+   🎭 REACTION PICKER POSITIONING
+   ================================= */
+
+/* Reaction picker positioning */
+.reaction-picker-container {
+  position: relative;
+}
+
+.reaction-picker-container .reaction-picker {
+  position: absolute;
+  bottom: 100%;
+  margin-bottom: 0.5rem;
+  z-index: 50;
+  min-width: 320px;
+  max-width: 90vw;
+}
+
+.reaction-picker-container .reaction-picker.picker-left {
+  left: 0;
+}
+
+.reaction-picker-container .reaction-picker.picker-right {
+  right: 0;
+}
+
+/* Ensure picker doesn't go off screen */
+@media (max-width: 640px) {
+  .reaction-picker-container .reaction-picker {
+    min-width: 280px;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+  }
+}
+
+/* =================================
+   ⌨️ TYPING INDICATOR ANIMATIONS
+   ================================= */
+
+.typing-dot-1 {
+  animation-delay: 0ms;
+}
+
+.typing-dot-2 {
+  animation-delay: 150ms;
+}
+
+.typing-dot-3 {
+  animation-delay: 300ms;
+}
+
+/* =================================
+   ✨ ANIMATION CLASSES
+   ================================= */
+
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.slide-in {
+  animation: slideIn 0.3s ease-in-out;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* =================================
+   🔧 UTILITY CLASSES
+   ================================= */
+
+.text-primary { color: var(--text-primary); }
+.text-secondary { color: var(--text-secondary); }
+.text-tertiary { color: var(--text-tertiary); }
+.text-muted { color: var(--text-muted); }
+
+.bg-primary { background: var(--bg-primary); }
+.bg-secondary { background: var(--bg-secondary); }
+.bg-tertiary { background: var(--bg-tertiary); }
+
+.border-primary { border-color: var(--border-primary); }
+.border-secondary { border-color: var(--border-secondary); }
+
+/* =================================
+   📱 RESPONSIVE DESIGN
+   ================================= */
+
+@media (max-width: 768px) {
+  .chat-sidebar {
+    position: fixed;
+    left: -100%;
+    top: 0;
+    height: 100vh;
+    z-index: 50;
+    transition: left 0.3s ease;
+  }
+  
+  .chat-sidebar.open {
+    left: 0;
+  }
 }
 
 /* Custom Scrollbar Styling - Firefox fallback */
@@ -23,6 +367,10 @@ body {
   * {
     scrollbar-width: thin;
     scrollbar-color: #4b5563 #1f2937;
+  }
+  
+  .dark * {
+    scrollbar-color: #6b7280 #374151;
   }
 }
 
@@ -33,18 +381,31 @@ body {
 }
 
 *::-webkit-scrollbar-track {
-  background: linear-gradient(to bottom, #1f2937, #111827);
+  background: #f1f5f9;
   border-radius: 8px;
+}
+
+.dark *::-webkit-scrollbar-track {
+  background: linear-gradient(to bottom, #1f2937, #111827);
 }
 
 *::-webkit-scrollbar-thumb {
-  background: linear-gradient(to bottom, #6b7280, #4b5563);
+  background: #cbd5e1;
   border-radius: 8px;
-  border: 1px solid #374151;
+  border: 1px solid #e2e8f0;
   transition: background 0.2s ease-in-out;
 }
 
+.dark *::-webkit-scrollbar-thumb {
+  background: linear-gradient(to bottom, #6b7280, #4b5563);
+  border: 1px solid #374151;
+}
+
 *::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.dark *::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(to bottom, #9ca3af, #6b7280);
 }
 
