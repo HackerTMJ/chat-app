@@ -20,8 +20,8 @@ export function useRealTimeMessages(roomId: string | null) {
     const MAX_RECONNECT_ATTEMPTS = 5
     
     // AFK/Offline detection
-    let isOnline = navigator.onLine
-    let isVisible = !document.hidden
+    let isOnline = typeof window !== 'undefined' ? navigator.onLine : true
+    let isVisible = typeof document !== 'undefined' ? !document.hidden : true
     let hasBeenAFK = false
     let reconnectOnVisibilityChange = false
 
@@ -44,7 +44,7 @@ export function useRealTimeMessages(roomId: string | null) {
 
     const handleVisibilityChange = () => {
       const wasVisible = isVisible
-      isVisible = !document.hidden
+      isVisible = typeof document !== 'undefined' ? !document.hidden : true
 
       if (!wasVisible && isVisible) {
         // Page became visible
@@ -65,9 +65,13 @@ export function useRealTimeMessages(roomId: string | null) {
     }
 
     // Add event listeners for AFK detection
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
-    document.addEventListener('visibilitychange', handleVisibilityChange)
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', handleOnline)
+      window.addEventListener('offline', handleOffline)
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+    }
     
     const setupRealtime = async () => {
       try {
@@ -406,7 +410,7 @@ export function useRealTimeMessages(roomId: string | null) {
         console.error('Real-time setup error:', error)
         
         // Check if it's a network issue
-        if (!navigator.onLine) {
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
           if (isMounted) {
             setError('No internet connection. Real-time updates disabled.')
           }
@@ -433,10 +437,6 @@ export function useRealTimeMessages(roomId: string | null) {
     }
     
     // Set up event listeners
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
-    
     setupRealtime().catch(e => {
       console.warn('Initial setup failed:', e)
       if (isMounted) {
@@ -448,7 +448,7 @@ export function useRealTimeMessages(roomId: string | null) {
     const healthCheckInterval = setInterval(() => {
       if (!isMounted) return
       
-      if (channel && !isConnected && navigator.onLine) {
+      if (channel && !isConnected && typeof navigator !== 'undefined' && navigator.onLine) {
         console.log('🏥 Health check: Connection lost, attempting reconnect...')
         if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
           setupRealtime().catch(e => {
@@ -515,11 +515,15 @@ export function useRealTimeMessages(roomId: string | null) {
         reconnectTimeout = null
       }
       
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOffline)
-      window.removeEventListener('error', handleGlobalError)
-      window.removeEventListener('unhandledrejection', handleUnhandledRejection)
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange)
+      }
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('online', handleOnline)
+        window.removeEventListener('offline', handleOffline)
+        window.removeEventListener('error', handleGlobalError)
+        window.removeEventListener('unhandledrejection', handleUnhandledRejection)
+      }
       
       // Cleanup realtime optimizer
       realtimeOptimizer.cleanup()
