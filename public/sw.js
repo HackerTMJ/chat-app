@@ -85,9 +85,11 @@ self.addEventListener('push', (event) => {
   )
 })
 
-// Handle Notification Clicks
+// Handle Notification Clicks with Reply Support
 self.addEventListener('notificationclick', (event) => {
-  console.log('Notification clicked:', event)
+  console.log('🔔 Notification action:', event.action, event.notification.data)
+  
+  const data = event.notification.data || {}
   
   event.notification.close()
 
@@ -95,25 +97,92 @@ self.addEventListener('notificationclick', (event) => {
     return
   }
 
-  // Default action or 'open' action
-  const urlToOpen = event.notification.data?.url || '/chat'
-  
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true })
-      .then((clientList) => {
-        // Check if there's already a window/tab open with the target URL
-        for (const client of clientList) {
-          if (client.url.includes('/chat') && 'focus' in client) {
-            return client.focus()
+  if (event.action === 'reply') {
+    // Handle reply action with text input
+    console.log('💬 Reply action with text:', event.reply)
+    
+    // Store reply data for the main app to process
+    const replyData = {
+      room_id: data.room_id,
+      reply_text: event.reply || '',
+      timestamp: Date.now(),
+      in_reply_to: data.message_id,
+      sender: data.sender
+    }
+    
+    // Build chat URL with reply parameters
+    let chatUrl = '/chat'
+    if (data.room_id) {
+      chatUrl = `/chat?room=${data.room_id}&reply=true`
+    }
+    
+    event.waitUntil(
+      clients.matchAll({ type: 'window', includeUncontrolled: true })
+        .then((clientList) => {
+          // Check if there's already a chat window open
+          for (const client of clientList) {
+            if (client.url.includes('/chat') && 'focus' in client) {
+              // Send reply data to existing window
+              client.postMessage({
+                type: 'NOTIFICATION_REPLY',
+                data: replyData
+              })
+              return client.focus()
+            }
           }
-        }
-        
-        // If no existing window, open a new one
-        if (clients.openWindow) {
-          return clients.openWindow(urlToOpen)
-        }
-      })
-  )
+          
+          // If no existing window, open a new one
+          if (clients.openWindow) {
+            return clients.openWindow(chatUrl).then(function(windowClient) {
+              // Send reply data to the new window
+              if (windowClient) {
+                // Store in a way the new window can access
+                return new Promise(resolve => {
+                  setTimeout(() => {
+                    windowClient.postMessage({
+                      type: 'NOTIFICATION_REPLY',
+                      data: replyData
+                    })
+                    resolve()
+                  }, 1000) // Wait for window to load
+                })
+              }
+            })
+          }
+        })
+    )
+    
+  } else {
+    // Default action, 'view' action, or 'open' action
+    console.log('👁️ View/Open action')
+    
+    let urlToOpen = '/chat'
+    if (data.room_id) {
+      urlToOpen = `/chat?room=${data.room_id}`
+      if (data.message_id) {
+        urlToOpen += `&highlight=${data.message_id}`
+      }
+    } else if (data.url) {
+      urlToOpen = data.url
+    }
+    
+    event.waitUntil(
+      clients.matchAll({ type: 'window', includeUncontrolled: true })
+        .then((clientList) => {
+          // Check if there's already a window/tab open with the target URL
+          for (const client of clientList) {
+            if (client.url.includes('/chat') && 'focus' in client) {
+              return client.focus()
+            }
+          }
+          
+          // If no existing window, open a new one
+          if (clients.openWindow) {
+            return clients.openWindow(urlToOpen)
+          }
+        })
+    )
+  }
 })
 
 // Handle Notification Close

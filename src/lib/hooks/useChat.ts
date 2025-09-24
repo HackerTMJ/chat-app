@@ -2,6 +2,7 @@
 import { useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useChatStore, Message, Room } from '@/lib/stores/chat'
+import { realtimeOptimizer, bandwidthMonitor } from '@/lib/cache/RealtimeOptimizer'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 
 export function useRealTimeMessages(roomId: string | null) {
@@ -18,12 +19,75 @@ export function useRealTimeMessages(roomId: string | null) {
     let reconnectAttempts = 0
     const MAX_RECONNECT_ATTEMPTS = 5
     
+    // AFK/Offline detection
+    let isOnline = navigator.onLine
+    let isVisible = !document.hidden
+    let hasBeenAFK = false
+    let reconnectOnVisibilityChange = false
+
+    // Handle online/offline events
+    const handleOnline = () => {
+      console.log('🌐 Connection restored')
+      isOnline = true
+      if (reconnectOnVisibilityChange && isVisible && isMounted) {
+        console.log('🔄 Reconnecting on connection restore...')
+        reconnectAttempts = 0
+        reconnectOnVisibilityChange = false
+        setupRealtime().catch(e => console.warn('Reconnect on online failed:', e))
+      }
+    }
+
+    const handleOffline = () => {
+      console.log('📴 Connection lost')
+      isOnline = false
+    }
+
+    const handleVisibilityChange = () => {
+      const wasVisible = isVisible
+      isVisible = !document.hidden
+
+      if (!wasVisible && isVisible) {
+        // Page became visible
+        console.log('👀 Page became visible')
+        hasBeenAFK = false
+        
+        if (reconnectOnVisibilityChange && isOnline && isMounted) {
+          console.log('🔄 Reconnecting on visibility change...')
+          reconnectAttempts = 0
+          reconnectOnVisibilityChange = false
+          setupRealtime().catch(e => console.warn('Reconnect on visibility failed:', e))
+        }
+      } else if (wasVisible && !isVisible) {
+        // Page became hidden
+        console.log('🌙 Page became hidden - entering AFK mode')
+        hasBeenAFK = true
+      }
+    }
+
+    // Add event listeners for AFK detection
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    
     const setupRealtime = async () => {
       try {
         console.log('🚀 Setting up real-time for room:', roomId)
         
         // Don't setup if component is unmounted
         if (!isMounted) return
+        
+        // Check if we should defer setup during AFK/offline periods
+        if (!isOnline) {
+          console.log('📴 Offline - deferring real-time setup')
+          reconnectOnVisibilityChange = true
+          return
+        }
+        
+        if (!isVisible && hasBeenAFK) {
+          console.log('🌙 Page hidden and AFK detected - deferring real-time setup')
+          reconnectOnVisibilityChange = true
+          return
+        }
         
         // Clear any existing error when attempting to connect
         if (isMounted) {
@@ -104,59 +168,60 @@ export function useRealTimeMessages(roomId: string | null) {
                 if (!isMounted) return
                 
                 console.log('🔥 REAL-TIME MESSAGE INSERT!', payload)
-                console.log('🔥 Message data:', payload.new)
                 
                 const newMessage = payload.new as Message
                 
-                // Check if we already have this exact message (from optimistic update)
-                // Look for messages with same content, user_id, and similar timestamp
-                const existingOptimistic = useChatStore.getState().messages.find(m => 
-                  m.content === newMessage.content &&
-                  m.user_id === newMessage.user_id &&
-                  m.room_id === newMessage.room_id &&
-                  m.id.startsWith('temp-') &&
-                  Math.abs(new Date(m.created_at).getTime() - new Date(newMessage.created_at).getTime()) < 5000 // Within 5 seconds
-                )
-                
-                if (existingOptimistic) {
-                  console.log('🔄 Real-time found matching optimistic message, reconciling:', existingOptimistic.id, '→', newMessage.id)
-                  // Update the optimistic message with real data instead of adding duplicate
-                  const { updateMessage } = useChatStore.getState()
-                  updateMessage(existingOptimistic.id, newMessage)
-                  return // Skip adding duplicate
-                }
-                
-                // Fetch profile and add message (addMessage will handle duplicates)
-                const fetchProfileAndAddMessage = async () => {
+                // Use realtime optimizer for bandwidth optimization
+                realtimeOptimizer.optimizeMessage(roomId, newMessage, async (optimizedMessage) => {
+                  // Check if we already have this exact message (from optimistic update)
+                  const existingOptimistic = useChatStore.getState().messages.find(m => 
+                    m.content === optimizedMessage.content &&
+                    m.user_id === optimizedMessage.user_id &&
+                    m.room_id === optimizedMessage.room_id &&
+                    m.id.startsWith('temp-') &&
+                    Math.abs(new Date(m.created_at).getTime() - new Date(optimizedMessage.created_at).getTime()) < 5000
+                  )
+                  
+                  if (existingOptimistic) {
+                    console.log('🔄 Real-time found matching optimistic message, reconciling:', existingOptimistic.id, '→', optimizedMessage.id)
+                    const { updateMessage } = useChatStore.getState()
+                    updateMessage(existingOptimistic.id, optimizedMessage)
+                    bandwidthMonitor.recordRequest(JSON.stringify(optimizedMessage).length, true)
+                    return
+                  }
+                  
+                  // Fetch profile and add message
                   try {
                     if (!isMounted) return
                     
                     const { data: profile } = await supabase
                       .from('profiles')
                       .select('username, avatar_url')
-                      .eq('id', newMessage.user_id)
+                      .eq('id', optimizedMessage.user_id)
                       .single()
                     
                     if (!isMounted) return
                     
-                    console.log('✅ Adding real-time message with profile')
-                    addMessage({
-                      ...newMessage,
+                    console.log('✅ Adding optimized real-time message with profile')
+                    const messageWithProfile = {
+                      ...optimizedMessage,
                       profiles: profile || { username: 'Unknown User', avatar_url: null }
-                    } as Message)
+                    } as Message
+                    
+                    addMessage(messageWithProfile)
+                    bandwidthMonitor.recordRequest(JSON.stringify(messageWithProfile).length, false)
                   } catch (error) {
                     if (!isMounted) return
                     
                     console.log('Profile fetch error, adding message without profile:', error)
-                    addMessage({
-                      ...newMessage,
+                    const messageWithoutProfile = {
+                      ...optimizedMessage,
                       profiles: { username: 'Unknown User', avatar_url: null }
-                    } as Message)
+                    } as Message
+                    
+                    addMessage(messageWithoutProfile)
+                    bandwidthMonitor.recordRequest(JSON.stringify(messageWithoutProfile).length, false)
                   }
-                }
-                
-                fetchProfileAndAddMessage().catch(e => {
-                  console.warn('Error in fetchProfileAndAddMessage:', e)
                 })
               } catch (error) {
                 console.warn('Error in INSERT handler:', error)
@@ -233,29 +298,38 @@ export function useRealTimeMessages(roomId: string | null) {
                 reconnectAttempts = 0 // Reset reconnect attempts on successful connection
                 if (isMounted) {
                   setError(null) // Clear any previous errors
+                  // Optimize room subscription with prefetching
+                  realtimeOptimizer.optimizeRoomSubscription(roomId).catch(e => {
+                    console.warn('Room subscription optimization failed:', e)
+                  })
                 }
               } else if (status === 'CHANNEL_ERROR') {
-                // Silently handle channel errors - they're usually temporary connection issues
-                // Only log when page is visible and we have multiple failures
-                if (document.visibilityState === 'visible' && reconnectAttempts > 2) {
-                  console.log('Connection issue detected, attempting reconnection...')
+                console.log('❌ Channel error detected')
+                isConnected = false
+                
+                // Don't retry excessively during AFK periods
+                if (!isVisible && (hasBeenAFK || !isOnline)) {
+                  console.log('🌙 Channel error during AFK/offline - will retry when visible')
+                  reconnectOnVisibilityChange = true
+                  return
                 }
                 
                 // Check if it's an auth issue (silently)
                 supabase.auth.getUser().then(({ data: { user }, error }) => {
                   if (error || !user) {
-                    if (isMounted && document.visibilityState === 'visible') {
+                    if (isMounted && isVisible) {
                       setError('Authentication expired. Please refresh and login again.')
                     }
                   }
                 })
                 
-                isConnected = false
-                
                 // Only show error messages when page is visible and after multiple attempts
-                if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS && isMounted && document.visibilityState === 'visible' && reconnectAttempts > 1) {
+                if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS && isMounted && isVisible && isOnline) {
                   const delay = Math.min(3000 * Math.pow(2, reconnectAttempts), 30000)
-                  setError(`Connection lost. Reconnecting in ${Math.round(delay/1000)}s... (${reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})`)
+                  
+                  if (reconnectAttempts > 1) {
+                    setError(`Connection lost. Reconnecting in ${Math.round(delay/1000)}s... (${reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})`)
+                  }
                   
                   // Clear existing timeout
                   if (reconnectTimeout) {
@@ -264,7 +338,7 @@ export function useRealTimeMessages(roomId: string | null) {
                   }
                   
                   reconnectTimeout = setTimeout(() => {
-                    if (isMounted) {
+                    if (isMounted && isVisible && isOnline) {
                       reconnectAttempts++
                       console.log(`🔄 Reconnect attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}...`)
                       setupRealtime().catch(e => {
@@ -272,21 +346,26 @@ export function useRealTimeMessages(roomId: string | null) {
                       })
                     }
                   }, delay)
-                } else if (isMounted && document.visibilityState === 'visible') {
-                  setError('Connection failed after multiple attempts. Please check your internet connection and refresh the page.')
+                } else if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS && isMounted && isVisible) {
                   console.error('Max reconnection attempts reached')
+                  setError('Connection failed after multiple attempts. Please refresh the page.')
                 }
               } else if (status === 'TIMED_OUT') {
-                if (document.visibilityState === 'visible') {
-                  console.warn('⏰ SUBSCRIPTION TIMED OUT')
-                }
+                console.warn('⏰ Connection timed out')
                 isConnected = false
                 
-                if (isMounted && reconnectAttempts < MAX_RECONNECT_ATTEMPTS && document.visibilityState === 'visible') {
+                // Timeout during AFK is expected, defer retry
+                if (!isVisible || !isOnline) {
+                  console.log('🌙 Timeout during AFK/offline - will retry when ready')
+                  reconnectOnVisibilityChange = true
+                  return
+                }
+                
+                if (isMounted && reconnectAttempts < MAX_RECONNECT_ATTEMPTS && isVisible && isOnline) {
                   setError('Connection timed out. Reconnecting...')
                   
                   reconnectTimeout = setTimeout(() => {
-                    if (isMounted) {
+                    if (isMounted && isVisible && isOnline) {
                       reconnectAttempts++
                       console.log('🔄 Reconnecting after timeout...')
                       setupRealtime().catch(e => {
@@ -296,14 +375,20 @@ export function useRealTimeMessages(roomId: string | null) {
                   }, 2000)
                 }
               } else if (status === 'CLOSED') {
-                if (document.visibilityState === 'visible') {
-                  console.warn('🔌 CONNECTION CLOSED')
-                }
+                console.warn('🔒 Connection closed')
                 isConnected = false
-                if (isMounted && document.visibilityState === 'visible' && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                
+                // Check if this is an expected close during AFK
+                if (!isVisible || !isOnline) {
+                  console.log('🌙 Connection closed during AFK/offline - will retry when ready')
+                  reconnectOnVisibilityChange = true
+                  return
+                }
+                
+                if (isMounted && isVisible && isOnline && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
                   setError('Connection closed. Reconnecting...')
                   reconnectTimeout = setTimeout(() => {
-                    if (isMounted) {
+                    if (isMounted && isVisible && isOnline) {
                       reconnectAttempts++
                       console.log('🔄 Reconnecting after close...')
                       setupRealtime().catch(e => {
@@ -344,64 +429,6 @@ export function useRealTimeMessages(roomId: string | null) {
         } else if (isMounted) {
           setError('Unable to establish real-time connection. Messages will still be sent, but you may need to refresh to see new messages from others.')
         }
-      }
-    }
-    
-    // Handle page visibility changes (when user comes back from AFK)
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        console.log('👁️ Page became visible, checking connection...')
-        
-        // Clear any existing error messages when coming back from AFK
-        if (isMounted) {
-          setError(null)
-        }
-        
-        // If connection is lost, try to reconnect
-        if (!isConnected && isMounted) {
-          console.log('🔄 Reconnecting after returning from AFK...')
-          // Reset reconnect attempts when user returns
-          reconnectAttempts = 0
-          
-          // Small delay to ensure page is fully active
-          setTimeout(() => {
-            if (isMounted && document.visibilityState === 'visible') {
-              setupRealtime().catch(e => {
-                console.warn('Visibility reconnect failed:', e)
-              })
-            }
-          }, 500)
-        }
-      } else {
-        console.log('👁️ Page became hidden (AFK mode)')
-        // Don't show error messages when going AFK
-        if (isMounted) {
-          setError(null)
-        }
-      }
-    }
-    
-    // Handle online/offline events
-    const handleOnline = () => {
-      console.log('🌐 Back online, reconnecting...')
-      if (!isConnected && isMounted) {
-        // Reset reconnect attempts when back online
-        reconnectAttempts = 0
-        setError('Back online. Reconnecting...')
-        setTimeout(() => {
-          if (isMounted) {
-            setupRealtime().catch(e => {
-              console.warn('Online reconnect failed:', e)
-            })
-          }
-        }, 1000)
-      }
-    }
-    
-    const handleOffline = () => {
-      console.log('📴 Gone offline')
-      if (isMounted) {
-        setError('No internet connection')
       }
     }
     
@@ -493,6 +520,9 @@ export function useRealTimeMessages(roomId: string | null) {
       window.removeEventListener('offline', handleOffline)
       window.removeEventListener('error', handleGlobalError)
       window.removeEventListener('unhandledrejection', handleUnhandledRejection)
+      
+      // Cleanup realtime optimizer
+      realtimeOptimizer.cleanup()
     }
   }, [roomId, addMessage, updateMessage, deleteMessage, setError])
 }
@@ -633,26 +663,45 @@ export function useLoadRooms() {
         const roomIds = memberships.map(m => m.room_id)
         console.log('Room IDs:', roomIds)
 
-        // Now get the actual rooms
-        const { data: rooms, error: roomsError } = await supabase
-          .from('rooms')
-          .select('*')
-          .in('id', roomIds)
-          .order('name', { ascending: true })
+        // Get the latest message timestamp for each room
+        const roomsWithLatestMessage = []
         
-        if (roomsError) {
-          console.error('Error loading rooms:', roomsError)
-          throw roomsError
+        for (const roomId of roomIds) {
+          // Get room info
+          const { data: room, error: roomError } = await supabase
+            .from('rooms')
+            .select('*')
+            .eq('id', roomId)
+            .single()
+            
+          if (roomError || !room) {
+            console.warn(`Failed to load room ${roomId}:`, roomError)
+            continue
+          }
+          
+          // Get latest message timestamp for this room
+          const { data: latestMessage } = await supabase
+            .from('messages')
+            .select('created_at')
+            .eq('room_id', roomId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          
+          roomsWithLatestMessage.push({
+            ...room,
+            latest_message_timestamp: latestMessage?.created_at || room.created_at
+          })
         }
         
-        console.log('Loaded rooms from server:', rooms)
-        setRooms(rooms || [])
+        console.log('Loaded rooms with latest messages:', roomsWithLatestMessage)
+        setRooms(roomsWithLatestMessage)
         
         // Cache the rooms for future use
-        if (rooms && rooms.length > 0) {
+        if (roomsWithLatestMessage && roomsWithLatestMessage.length > 0) {
           const { cacheManager } = await import('@/lib/cache/CacheManager')
-          await cacheManager.cacheRooms(user.id, rooms)
-          console.log(`💾 Cached ${rooms.length} rooms for user ${user.id}`)
+          await cacheManager.cacheRooms(user.id, roomsWithLatestMessage)
+          console.log(`💾 Cached ${roomsWithLatestMessage.length} rooms for user ${user.id}`)
         }
         
       } catch (error: any) {

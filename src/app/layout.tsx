@@ -30,8 +30,11 @@ export const metadata: Metadata = {
       { url: "/icon-192x192.png", sizes: "192x192", type: "image/png" }
     ],
     apple: [
-      { url: "/icon-192x192.png", sizes: "180x180", type: "image/png" }
+      { url: "/icon-192x192.png", sizes: "180x180", type: "image/png" },
+      { url: "/icon-192x192.png", sizes: "152x152", type: "image/png" },
+      { url: "/icon-192x192.png", sizes: "120x120", type: "image/png" }
     ],
+    shortcut: "/icon-192x192.png",
   },
   other: {
     'theme-color': '#667eea',

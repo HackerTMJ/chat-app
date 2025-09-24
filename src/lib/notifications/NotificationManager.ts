@@ -22,6 +22,7 @@ export interface NotificationSettings {
   enabled: boolean
   sound: boolean
   desktop: boolean
+  showWhenFocused: boolean
 }
 
 export class NotificationManager {
@@ -36,7 +37,8 @@ export class NotificationManager {
   private settings: NotificationSettings = {
     enabled: true,
     sound: true,
-    desktop: true
+    desktop: true,
+    showWhenFocused: false  // Default: only show when app is in background
   }
 
   private constructor() {
@@ -151,40 +153,67 @@ export class NotificationManager {
   async showMessageNotification(message: { 
     sender_name?: string
     content: string
-    room_name?: string 
-  }) {
+    room_name?: string
+    room_id?: string
+    message_id?: string
+  }, force: boolean = false) {
     if (typeof window === 'undefined' || 
-        !this.settings.enabled || 
         !this.permissionState.supported || 
         this.permissionState.permission !== 'granted') {
+      return
+    }
+
+    // Check if we should show the notification
+    if (!force && !this.shouldShowNotification()) {
+      console.log('🔕 Notification skipped - app is focused and showWhenFocused is disabled')
       return
     }
 
     const options: NotificationOptions = {
       title: `New message${message.room_name ? ` in ${message.room_name}` : ''}`,
       body: `${message.sender_name || 'Someone'}: ${message.content}`,
-      icon: '/notification-icon.png',
-      badge: '/notification-badge.png',
-      tag: 'chat-message',
-      requireInteraction: false,
+      tag: `message-${message.room_name || 'unknown'}`, // Use room name in tag for better management
+      requireInteraction: true, // Keep notification visible for reply action
       silent: !this.settings.sound,
       data: {
         type: 'message',
         room: message.room_name,
-        sender: message.sender_name
+        room_id: message.room_id,
+        sender: message.sender_name,
+        message_id: message.message_id,
+        timestamp: Date.now()
       }
     }
 
     try {
       if (this.swRegistration) {
-        // Use service worker for persistent notifications
-        await this.swRegistration.showNotification(options.title, options)
+        // Use service worker for persistent notifications with actions
+        const notificationOptions = {
+          ...options,
+          actions: [
+            {
+              action: 'reply',
+              title: '💬 Reply',
+              type: 'text' as const,
+              placeholder: 'Type your reply...'
+            },
+            {
+              action: 'view',
+              title: '👁️ View',
+            }
+          ]
+        }
+        await this.swRegistration.showNotification(options.title, notificationOptions)
       } else {
-        // Fallback to direct notification
-        new Notification(options.title, options)
+        // Fallback to direct notification with click handler
+        const notification = new Notification(options.title, options)
+        notification.onclick = () => {
+          this.handleNotificationClick(options.data)
+          notification.close()
+        }
       }
       
-      console.log('📱 Message notification shown')
+      console.log('📱 Message notification shown with reply actions')
     } catch (error) {
       console.error('Failed to show notification:', error)
     }
@@ -197,7 +226,7 @@ export class NotificationManager {
       sender_name: 'Test User',
       content: 'This is a test notification!',
       room_name: 'Test Room'
-    })
+    }, true) // Force show test notifications
   }
 
   // Additional utility methods for better API compatibility
@@ -209,11 +238,64 @@ export class NotificationManager {
     })
   }
 
-  shouldShowNotification(): boolean {
+  private handleNotificationClick(data: any) {
+    console.log('🔔 Notification clicked:', data)
+    
+    if (data?.room_id) {
+      // Focus the window if it exists
+      if (typeof window !== 'undefined') {
+        window.focus()
+        
+        // Navigate to the room using URL
+        const chatUrl = `/chat?room=${data.room_id}`
+        if (data.message_id) {
+          // If we have a message ID, add it to highlight the message
+          window.location.href = `${chatUrl}&highlight=${data.message_id}`
+        } else {
+          window.location.href = chatUrl
+        }
+      }
+    }
+  }
+
+  // Method to handle notification replies (called from service worker)
+  handleNotificationReply(data: any, reply: string) {
+    console.log('💬 Notification reply:', { data, reply })
+    
+    // Store the reply in localStorage for the main app to pick up
+    if (typeof window !== 'undefined') {
+      const replyData = {
+        room_id: data.room_id,
+        reply_text: reply,
+        timestamp: Date.now(),
+        in_reply_to: data.message_id
+      }
+      
+      localStorage.setItem('pending_notification_reply', JSON.stringify(replyData))
+      
+      // Focus the window and navigate to room
+      window.focus()
+      const chatUrl = `/chat?room=${data.room_id}&reply=true`
+      window.location.href = chatUrl
+    }
+  }
+
+  shouldShowNotification(force: boolean = false): boolean {
     if (typeof window === 'undefined') return false
-    return this.permissionState.supported && 
-           this.permissionState.permission === 'granted' &&
-           !document.hasFocus()
+    
+    // Basic requirements check
+    const hasPermission = this.permissionState.supported && 
+                         this.permissionState.permission === 'granted' &&
+                         this.settings.enabled
+    
+    if (!hasPermission) return false
+    
+    // If forced (like test notifications), always show
+    if (force) return true
+    
+    // For message notifications, check if app is in background or user settings allow
+    // You can modify this logic based on user preferences
+    return !document.hasFocus() || this.settings.showWhenFocused
   }
 
   clearNotifications(tag?: string) {
@@ -249,9 +331,11 @@ export const notificationManager = NotificationManager.getInstance()
 export async function showMessageNotification(message: { 
   sender_name?: string
   content: string
-  room_name?: string 
-}) {
-  return notificationManager.showMessageNotification(message)
+  room_name?: string
+  room_id?: string
+  message_id?: string
+}, force: boolean = false) {
+  return notificationManager.showMessageNotification(message, force)
 }
 
 export async function requestNotificationPermission() {

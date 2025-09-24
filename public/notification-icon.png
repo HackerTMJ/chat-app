@@ -1,0 +1,5 @@
+<!-- Simple notification icon placeholder -->
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="24" cy="24" r="20" fill="#3B82F6"/>
+  <path d="M24 8C18.48 8 14 12.48 14 18v7l-2 2h12v4c0 2.21 1.79 4 4 4s4-1.79 4-4h-8v-4h12l-2-2v-7c0-5.52-4.48-10-10-10z" fill="white"/>
+</svg>

@@ -12,6 +12,7 @@ export function NotificationSettings() {
   })
   const [isRequesting, setIsRequesting] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
 
   useEffect(() => {
     // Initial state
@@ -23,7 +24,7 @@ export function NotificationSettings() {
     }, 1000)
 
     return () => clearInterval(interval)
-  }, [])
+  }, [refreshTrigger]) // Add refreshTrigger to dependencies
 
   const handleRequestPermission = async () => {
     if (!permissionState.supported) {
@@ -140,12 +141,41 @@ export function NotificationSettings() {
               )}
 
               {permissionState.permission === 'granted' && (
-                <button
-                  onClick={handleTestNotification}
-                  className="w-full py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                >
-                  Send Test Notification
-                </button>
+                <>
+                  <button
+                    onClick={handleTestNotification}
+                    className="w-full py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    Send Test Notification
+                  </button>
+                  
+                  {/* Show when focused toggle */}
+                  <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                    <div>
+                      <div className="text-sm font-medium">Show when app is focused</div>
+                      <div className="text-xs text-gray-600 dark:text-gray-400">Get notifications even when you're looking at the chat</div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const settings = notificationManager.getSettings()
+                        notificationManager.updateSettings({ showWhenFocused: !settings.showWhenFocused })
+                        setRefreshTrigger(prev => prev + 1) // Force re-render
+                      }}
+                      title={`${notificationManager.getSettings().showWhenFocused ? 'Disable' : 'Enable'} notifications when app is focused`}
+                      className={`w-12 h-6 rounded-full transition-colors ${
+                        notificationManager.getSettings().showWhenFocused
+                          ? 'bg-green-600' 
+                          : 'bg-gray-300 dark:bg-gray-600'
+                      }`}
+                    >
+                      <div className={`w-5 h-5 bg-white rounded-full transition-transform ${
+                        notificationManager.getSettings().showWhenFocused
+                          ? 'translate-x-6' 
+                          : 'translate-x-0.5'
+                      }`} />
+                    </button>
+                  </div>
+                </>
               )}
 
               {permissionState.permission === 'denied' && (

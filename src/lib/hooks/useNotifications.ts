@@ -20,6 +20,20 @@ export function useNotifications() {
         
         console.log('Notification system initialized')
         console.log('Permission state:', notificationManager.getPermissionState())
+        
+        // Only auto-request if user has previously shown interest (e.g., clicked a notification button)
+        // The NotificationPrompt component will handle the initial user experience
+        const hasShownInterest = localStorage.getItem('notification-interest-shown')
+        const permissionState = notificationManager.getPermissionState()
+        
+        if (hasShownInterest && permissionState.supported && permissionState.permission === 'default') {
+          console.log('Auto-requesting notification permission based on previous interest...')
+          try {
+            await notificationManager.requestPermission()
+          } catch (error) {
+            console.log('Auto-request failed or was declined:', error)
+          }
+        }
       } catch (error) {
         console.error('Failed to initialize notifications:', error)
       }
@@ -52,8 +66,19 @@ export function useNotifications() {
         // Update the last processed message ID
         lastMessageIdRef.current = latestMessage.id
 
-        // Show notification if app is not in focus
+        // Show notification if conditions are met
+        console.log('🔔 Notification check:', {
+          shouldShow: notificationManager.shouldShowNotification(),
+          isSupported: notificationManager.isSupported(),
+          isPermissionGranted: notificationManager.isPermissionGranted(),
+          documentHasFocus: document.hasFocus(),
+          currentRoom: currentRoom?.name,
+          messageFrom: latestMessage.profiles?.username,
+          messageContent: latestMessage.content.substring(0, 50)
+        })
+        
         if (notificationManager.shouldShowNotification()) {
+          console.log('📱 Showing notification for message from:', latestMessage.profiles?.username)
           showMessageNotification({
             content: latestMessage.content,
             sender_name: latestMessage.profiles?.username || 'Someone',
@@ -61,6 +86,8 @@ export function useNotifications() {
           }).catch((error: any) => {
             console.error('Failed to show message notification:', error)
           })
+        } else {
+          console.log('🔕 Notification skipped - conditions not met')
         }
       }
     )

@@ -1,7 +1,7 @@
 // Chat store using Zustand for state management with intelligent caching
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
-import { cacheManager } from '@/lib/cache/CacheManager'
+import { cacheSystem } from '@/lib/cache/CacheSystemManager'
 
 export interface Message {
   id: string
@@ -10,6 +10,8 @@ export interface Message {
   content: string
   created_at: string
   edited_at?: string
+  username?: string
+  avatar_url?: string | null
   profiles?: {
     username: string
     avatar_url: string | null
@@ -22,7 +24,9 @@ export interface Room {
   name: string
   created_by: string
   created_at: string
+  updated_at?: string
   last_message_at?: string
+  latest_message_timestamp?: string // For sorting by latest message
 }
 
 export interface TypingUser {
@@ -100,38 +104,81 @@ export const useChatStore = create<ChatState>()(
     },
     
     addMessage: async (message) => {
-      // Cache the message immediately
-      const cached = await cacheManager.cacheMessage(message)
-      
-      if (cached) {
-        set((state) => {
-          // Check if message already exists to prevent duplicates
-          const existingMessage = state.messages.find(m => m.id === message.id)
-          if (existingMessage) {
-            console.log('🔄 Message already exists, updating:', message.id)
-            // Update existing message (in case profile data was added)
-            return {
-              messages: state.messages.map(m => 
-                m.id === message.id ? message : m
-              ).sort((a, b) => 
-                new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-              )
-            }
-          }
-          
-          console.log('➕ Adding new message:', message.id)
-          return {
-            messages: [...state.messages, message].sort((a, b) => 
-              new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-            )
-          }
-        })
+      // Transform message for cache system
+      const cacheMessage = {
+        ...message,
+        username: message.profiles?.username || message.username || 'Unknown',
+        avatar_url: message.profiles?.avatar_url || message.avatar_url || null
       }
+      
+      // Cache the message immediately
+      await cacheSystem.cacheMessage(cacheMessage, true)
+      
+      set((state) => {
+        // Check if message already exists to prevent duplicates
+        const existingMessage = state.messages.find(m => m.id === message.id)
+        if (existingMessage) {
+          console.log('🔄 Message already exists, updating:', message.id)
+          // Update existing message (in case profile data was added)
+          return {
+            messages: state.messages.map(m => 
+              m.id === message.id ? message : m
+            ).sort((a, b) => 
+              new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            ),
+            // Update the room's latest message timestamp and re-sort rooms
+            rooms: state.rooms.map(room => 
+              room.id === message.room_id 
+                ? { ...room, latest_message_timestamp: message.created_at }
+                : room
+            ).sort((a, b) => {
+              const aTime = new Date(
+                a.latest_message_timestamp || a.last_message_at || a.created_at
+              ).getTime()
+              const bTime = new Date(
+                b.latest_message_timestamp || b.last_message_at || b.created_at
+              ).getTime()
+              return bTime - aTime // Most recent first
+            })
+          }
+        }
+        
+        console.log('➕ Adding new message:', message.id)
+        const newState = {
+          messages: [...state.messages, message].sort((a, b) => 
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          ),
+          // Update the room's latest message timestamp and re-sort rooms
+          rooms: state.rooms.map(room => 
+            room.id === message.room_id 
+              ? { ...room, latest_message_timestamp: message.created_at }
+              : room
+          ).sort((a, b) => {
+            const aTime = new Date(
+              a.latest_message_timestamp || a.last_message_at || a.created_at
+            ).getTime()
+            const bTime = new Date(
+              b.latest_message_timestamp || b.last_message_at || b.created_at
+            ).getTime()
+            return bTime - aTime // Most recent first
+          })
+        }
+        return newState
+      })
     },
 
     updateMessage: async (messageId, updates) => {
-      // Update in cache
-      await cacheManager.updateMessage(messageId, updates)
+      // Get current message for cache update
+      const currentMessage = get().messages.find(m => m.id === messageId)
+      if (currentMessage) {
+        const updatedMessage = {
+          ...currentMessage,
+          ...updates,
+          username: currentMessage.profiles?.username || currentMessage.username || 'Unknown',
+          avatar_url: currentMessage.profiles?.avatar_url || currentMessage.avatar_url || null
+        }
+        await cacheSystem.cacheMessage(updatedMessage, true)
+      }
       
       set((state) => {
         // Handle ID changes (optimistic → real reconciliation)
@@ -163,11 +210,8 @@ export const useChatStore = create<ChatState>()(
     },
 
     deleteMessage: async (messageId) => {
-      const currentRoom = get().currentRoom
-      if (currentRoom) {
-        // Remove from cache
-        await cacheManager.removeMessage(messageId, currentRoom.id)
-      }
+      // Note: CacheSystemManager doesn't have a direct delete method
+      // The message will expire via TTL or be evicted via LRU
       
       set((state) => ({
         messages: state.messages.filter(m => m.id !== messageId)
@@ -207,8 +251,15 @@ export const useChatStore = create<ChatState>()(
       const currentRoom = get().currentRoom
       if (currentRoom && validMessages.length > 0) {
         try {
-          // Cache the messages
-          await cacheManager.cacheMessages(currentRoom.id, validMessages)
+          // Cache the messages with the new cache system
+          for (const message of validMessages) {
+            const cacheMessage = {
+              ...message,
+              username: message.profiles?.username || message.username || 'Unknown',
+              avatar_url: message.profiles?.avatar_url || message.avatar_url || null
+            }
+            await cacheSystem.cacheMessage(cacheMessage, true)
+          }
         } catch (error) {
           console.error('Store: Failed to cache messages:', error)
         }
@@ -222,20 +273,43 @@ export const useChatStore = create<ChatState>()(
     },
     
     addRoom: (room) => set((state) => ({
-      rooms: [...state.rooms, room].sort((a, b) => a.name.localeCompare(b.name))
+      rooms: [...state.rooms, room].sort((a, b) => {
+        const aTime = new Date(
+          a.latest_message_timestamp || a.last_message_at || a.created_at
+        ).getTime()
+        const bTime = new Date(
+          b.latest_message_timestamp || b.last_message_at || b.created_at
+        ).getTime()
+        return bTime - aTime // Most recent first
+      })
     })),
     
     setRooms: async (rooms) => {
-      // This would need the current user ID - for now we'll skip caching
-      // In practice, you'd get the user ID from your auth system
-      // await cacheManager.cacheRooms(currentUserId, rooms)
-      
-      set({ 
-        rooms: rooms.sort((a, b) => a.name.localeCompare(b.name)) 
+      const sortedRooms = rooms.sort((a, b) => {
+        const aTime = new Date(
+          a.latest_message_timestamp || a.last_message_at || a.created_at
+        ).getTime()
+        const bTime = new Date(
+          b.latest_message_timestamp || b.last_message_at || b.created_at
+        ).getTime()
+        return bTime - aTime // Most recent first
       })
       
-      // Trigger smart preloading
-      await cacheManager.triggerSmartPreloading(rooms)
+      set({ rooms: sortedRooms })
+      
+      // Cache rooms in the new cache system
+      for (const room of rooms) {
+        const cacheRoom = {
+          ...room,
+          updated_at: room.updated_at || room.created_at || new Date().toISOString()
+        }
+        cacheSystem.cacheRoom(cacheRoom)
+      }
+      
+      // Prefetch messages for active rooms (optional)
+      for (const room of rooms.slice(0, 3)) { // Only first 3 rooms
+        await cacheSystem.prefetchRoomMessages(room.id, 20)
+      }
     },
     
     removeRoom: (roomId) => set((state) => ({
@@ -267,12 +341,20 @@ export const useChatStore = create<ChatState>()(
       
       try {
         // Try to get from cache first
-        const cachedMessages = await cacheManager.getMessages(roomId)
+        const cachedMessages = await cacheSystem.getMessagesByRoom(roomId, 100, 0)
         
         if (cachedMessages.length > 0) {
           console.log(`✅ Found ${cachedMessages.length} cached messages`)
-          set({ messages: cachedMessages })
-          return cachedMessages
+          // Transform cache messages back to store format
+          const storeMessages = cachedMessages.map(msg => ({
+            ...msg,
+            profiles: msg.username ? {
+              username: msg.username,
+              avatar_url: msg.avatar_url || null
+            } : undefined
+          }))
+          set({ messages: storeMessages })
+          return storeMessages
         }
         
         // If no cached messages, this would fetch from server
@@ -291,22 +373,9 @@ export const useChatStore = create<ChatState>()(
       console.log(`🔍 Loading rooms for user ${userId} with cache`)
       
       try {
-        // Try to get from cache first
-        const cachedRooms = await cacheManager.getRooms(userId)
-        
-        if (cachedRooms && cachedRooms.length > 0) {
-          console.log(`✅ Found ${cachedRooms.length} cached rooms`)
-          set({ rooms: cachedRooms })
-          
-          // Trigger smart preloading
-          await cacheManager.triggerSmartPreloading(cachedRooms)
-          
-          return cachedRooms
-        }
-        
-        // If no cached rooms, this would fetch from server
-        // For now, return empty array
-        console.log('📭 No cached rooms found')
+        // For now, the cache system doesn't have user-specific room caching
+        // We'll just return empty array and let the regular loading handle it
+        console.log('📭 Room caching not implemented in new cache system yet')
         return []
         
       } catch (error) {
@@ -318,12 +387,12 @@ export const useChatStore = create<ChatState>()(
     
     updateCacheStatus: async (): Promise<void> => {
       try {
-        const status = await cacheManager.getStatus()
+        const stats = cacheSystem.getStats()
         set({
           cacheStatus: {
-            isOnline: status.isOnline,
-            lastSync: status.syncStatus.lastSync,
-            pendingOperations: status.syncStatus.pendingOperations
+            isOnline: navigator.onLine,
+            lastSync: new Date(),
+            pendingOperations: 0
           }
         })
       } catch (error) {
@@ -333,7 +402,7 @@ export const useChatStore = create<ChatState>()(
     
     clearCache: async (): Promise<void> => {
       try {
-        await cacheManager.clearAll()
+        cacheSystem.clear()
         console.log('🧹 Cache cleared successfully')
       } catch (error) {
         console.error('❌ Error clearing cache:', error)

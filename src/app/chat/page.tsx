@@ -12,7 +12,7 @@ import { TypingIndicator } from '@/components/ui/TypingIndicator'
 import { StatusSelector } from '@/components/ui/StatusSelector'
 import { StatusIndicator } from '@/components/ui/StatusIndicator'
 import { useConfirmation } from '@/components/ui/ConfirmationDialog'
-import { CacheDemo } from '@/components/cache/CacheDemo'
+import { userCacheManager } from '@/lib/cache/UserCacheManager'
 import { useChatStore } from '@/lib/stores/chat'
 import { useRealTimeMessages, useLoadMessages, useLoadRooms, useSendMessage, useCreateRoom, useJoinRoom, useDeleteRoom, useLeaveRoom } from '@/lib/hooks/useChat'
 import { useRoomPresence } from '@/lib/hooks/usePresence'
@@ -21,7 +21,8 @@ import { useUserStatus } from '@/lib/hooks/useUserStatus'
 import { useRouter } from 'next/navigation'
 import { MessageCircle, Send, Plus, Link2, Hash, LogOut, Settings, Phone, Share2, RefreshCw, Edit3, Trash2, Save, X, Check, ChevronLeft, ChevronRight, Search, ChevronDown } from 'lucide-react'
 import { NotificationSettings } from '@/components/notifications/NotificationSettings'
-import { useNotifications } from '@/lib/hooks/useNotifications'
+import { NotificationPrompt } from '@/components/notifications/NotificationPrompt'
+import { useGlobalNotifications } from '@/lib/hooks/useGlobalNotifications'
 import { SimpleThemeToggle } from '@/components/ui/SimpleThemeToggle'
 
 export default function ChatPage() {
@@ -64,7 +65,7 @@ export default function ChatPage() {
   const { showConfirmation, ConfirmationComponent } = useConfirmation()
 
   // Initialize notifications
-  useNotifications()
+  useGlobalNotifications(user)
 
   // Load user and set up authentication
   useEffect(() => {
@@ -95,6 +96,113 @@ export default function ChatPage() {
       // loadRooms is handled by the hook
     }
   }, [user])
+
+  // Handle URL parameters for room navigation and message highlighting
+  useEffect(() => {
+    if (!user || !rooms.length) return
+
+    const urlParams = new URLSearchParams(window.location.search)
+    const roomId = urlParams.get('room')
+    const highlightMessageId = urlParams.get('highlight')
+    const shouldReply = urlParams.get('reply')
+
+    if (roomId) {
+      // Find and switch to the specified room
+      const targetRoom = rooms.find(room => room.id === roomId)
+      if (targetRoom && currentRoom?.id !== roomId) {
+        console.log('🔗 Navigating to room from notification:', targetRoom.name)
+        setCurrentRoom(targetRoom)
+
+        // Clear URL parameters after navigation
+        const newUrl = window.location.pathname
+        window.history.replaceState({}, '', newUrl)
+
+        // Handle message highlighting
+        if (highlightMessageId) {
+          setTimeout(() => {
+            const messageElement = document.querySelector(`[data-message-id="${highlightMessageId}"]`)
+            if (messageElement) {
+              messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+              setHighlightedMessageId(highlightMessageId)
+              setTimeout(() => setHighlightedMessageId(null), 3000)
+            }
+          }, 1000)
+        }
+      }
+    }
+
+    // Handle pending notification replies
+    if (shouldReply) {
+      const pendingReply = localStorage.getItem('pending_notification_reply')
+      if (pendingReply) {
+        try {
+          const replyData = JSON.parse(pendingReply)
+          console.log('📱 Processing pending notification reply:', replyData)
+          
+          // Set the reply text in the input
+          setMessageText(`@${replyData.sender || 'someone'} ${replyData.reply_text}`)
+          
+          // Clear the pending reply
+          localStorage.removeItem('pending_notification_reply')
+          
+          // Focus the input after a delay
+          setTimeout(() => {
+            const messageInput = document.querySelector('input[placeholder="Type your message..."]') as HTMLInputElement
+            if (messageInput) {
+              messageInput.focus()
+              messageInput.setSelectionRange(messageInput.value.length, messageInput.value.length)
+            }
+          }, 500)
+        } catch (error) {
+          console.error('Error processing pending reply:', error)
+          localStorage.removeItem('pending_notification_reply')
+        }
+      }
+    }
+  }, [user, rooms, currentRoom, setCurrentRoom])
+
+  // Listen for messages from service worker (notification replies)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      console.log('📱 Received message from service worker:', event.data)
+      
+      if (event.data.type === 'NOTIFICATION_REPLY') {
+        const replyData = event.data.data
+        console.log('💬 Processing notification reply:', replyData)
+        
+        // Navigate to the correct room if needed
+        if (replyData.room_id && currentRoom?.id !== replyData.room_id) {
+          const targetRoom = rooms.find(room => room.id === replyData.room_id)
+          if (targetRoom) {
+            setCurrentRoom(targetRoom)
+          }
+        }
+        
+        // Set the reply text in the input
+        const replyText = replyData.reply_text
+        if (replyText) {
+          setMessageText(replyText)
+          
+          // Focus the input after a delay
+          setTimeout(() => {
+            const messageInput = document.querySelector('input[placeholder="Type your message..."]') as HTMLInputElement
+            if (messageInput) {
+              messageInput.focus()
+              messageInput.setSelectionRange(messageInput.value.length, messageInput.value.length)
+            }
+          }, 500)
+        }
+      }
+    }
+
+    navigator.serviceWorker?.addEventListener('message', handleServiceWorkerMessage)
+    
+    return () => {
+      navigator.serviceWorker?.removeEventListener('message', handleServiceWorkerMessage)
+    }
+  }, [currentRoom, rooms, setCurrentRoom])
 
   // Auto-scroll functions
   const scrollToBottom = (smooth = true) => {
@@ -194,6 +302,54 @@ export default function ChatPage() {
       }
     }
   }, [user, rooms, currentRoom, setCurrentRoom])
+
+  // Cache users and presence data
+  useEffect(() => {
+    if (!currentRoom?.id || !onlineUsers.length) return
+
+    // Cache current room presence
+    const presenceData = onlineUsers.map(user => ({
+      user_id: user.user_id,
+      room_id: currentRoom.id,
+      status: 'online' as const,
+      last_seen: user.last_seen || new Date().toISOString()
+    }))
+    
+    userCacheManager.cacheRoomPresence(currentRoom.id, presenceData)
+
+    // Cache individual users
+    onlineUsers.forEach(user => {
+      if (user.user_id && user.username) {
+        userCacheManager.cacheUser(user.user_id, {
+          username: user.username,
+          avatar_url: user.avatar_url || undefined,
+          status: 'online',
+          last_seen: user.last_seen || new Date().toISOString()
+        })
+      }
+    })
+  }, [currentRoom?.id, onlineUsers])
+
+  // Cache current user
+  useEffect(() => {
+    if (!user) return
+    
+    const mappedStatus = (() => {
+      switch (userStatus) {
+        case 'busy': return 'away' as const
+        case 'away': return 'away' as const
+        case 'offline': return 'offline' as const
+        default: return 'online' as const
+      }
+    })()
+    
+    userCacheManager.cacheUser(user.id, {
+      username: user.email?.split('@')[0] || user.id,
+      avatar_url: user.user_metadata?.avatar_url,
+      status: mappedStatus,
+      last_seen: new Date().toISOString()
+    })
+  }, [user, userStatus])
 
   const startTyping = () => {
     if (!user || !currentRoom) return
@@ -454,9 +610,12 @@ export default function ChatPage() {
   }
   
   return (
-    <div className="chat-container flex h-screen">
+    <div className="chat-container flex h-screen max-h-screen overflow-hidden">
+      {/* Notification Prompt */}
+      <NotificationPrompt />
+      
       {/* Sidebar - Rooms */}
-      <div className="w-64 chat-sidebar flex flex-col shadow-2xl">
+      <div className="w-64 chat-sidebar flex flex-col shadow-2xl border-r border-gray-200 dark:border-gray-700">
         <div className="p-4 chat-header border-b border-primary">
           <div className="flex items-center gap-3 mb-3">
             <MessageCircle size={20} className="text-blue-600 drop-shadow-lg" />
@@ -701,10 +860,10 @@ export default function ChatPage() {
         </div>
         
         {/* Messages Area */}
-        <div className="flex-1 relative">
+        <div className="flex-1 relative min-h-0 flex flex-col">
           <div 
             ref={messagesContainerRef}
-            className="h-full overflow-y-auto p-6 space-y-4 chat-messages custom-scrollbar"
+            className="flex-1 overflow-y-auto p-6 space-y-4 chat-messages custom-scrollbar"
           >
           {isLoading ? (
             <div className="text-center text-secondary py-8">
@@ -838,6 +997,22 @@ export default function ChatPage() {
             })
           )}
           <div ref={messagesEndRef} />
+          
+          {/* Floating Scroll to Bottom Button */}
+          {showScrollButton && (
+            <button
+              type="button"
+              onClick={() => {
+                scrollToBottom()
+                setShowScrollButton(false)
+                setAutoScroll(true)
+              }}
+              className="absolute bottom-4 right-4 bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-lg transition-all duration-200 flex items-center justify-center z-10 border-2 border-white"
+              title="Scroll to bottom"
+            >
+              <ChevronDown size={20} />
+            </button>
+          )}
           </div>
         </div>
 
@@ -857,20 +1032,6 @@ export default function ChatPage() {
                 className="flex-1 p-4 chat-input rounded-2xl shadow-lg"
                 disabled={isLoading}
               />
-              
-              {/* Scroll to Bottom Button beside Send */}
-              <button
-                type="button"
-                onClick={() => {
-                  scrollToBottom()
-                  setShowScrollButton(false)
-                  setAutoScroll(true)
-                }}
-                className="bg-gray-500 hover:bg-gray-600 text-white p-4 rounded-2xl shadow-lg transition-all duration-200 flex items-center justify-center"
-                title="Scroll to bottom"
-              >
-                <ChevronDown size={18} />
-              </button>
               
               <Button
                 type="submit"
@@ -896,9 +1057,6 @@ export default function ChatPage() {
       
       {/* Confirmation Dialog */}
       <ConfirmationComponent />
-      
-      {/* Cache Demo (Development Only) */}
-      <CacheDemo />
     </div>
   )
 }
