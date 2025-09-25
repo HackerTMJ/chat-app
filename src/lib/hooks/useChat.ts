@@ -318,14 +318,21 @@ export function useRealTimeMessages(roomId: string | null) {
                   return
                 }
                 
-                // Check if it's an auth issue (silently)
-                supabase.auth.getUser().then(({ data: { user }, error }) => {
-                  if (error || !user) {
-                    if (isMounted && isVisible) {
-                      setError('Authentication expired. Please refresh and login again.')
+                // Check if it's an auth issue (only when visible to avoid AFK fetch errors)
+                if (isVisible && !hasBeenAFK) {
+                  supabase.auth.getUser().then(({ data: { user }, error }) => {
+                    if (error || !user) {
+                      if (isMounted && isVisible) {
+                        setError('Authentication expired. Please refresh and login again.')
+                      }
                     }
-                  }
-                })
+                  }).catch(() => {
+                    // Silently handle auth fetch errors
+                    if (isVisible && !hasBeenAFK) {
+                      console.warn('Auth check failed - network may be unstable')
+                    }
+                  })
+                }
                 
                 // Only show error messages when page is visible and after multiple attempts
                 if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS && isMounted && isVisible && isOnline) {
@@ -465,12 +472,33 @@ export function useRealTimeMessages(roomId: string | null) {
         event.preventDefault() // Prevent the error from bubbling up
         return false
       }
+      
+      // Handle authentication fetch errors during AFK
+      if (event.message && (event.message.includes('Failed to fetch') || event.message.includes('AuthRetryableFetchError'))) {
+        if (typeof document !== 'undefined' && document.hidden) {
+          // Silently handle auth fetch errors during AFK
+          event.preventDefault()
+          return false
+        }
+      }
     }
     
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
       if (event.reason && typeof event.reason === 'string' && event.reason.includes('CHANNEL ERROR')) {
         // Silently handle channel error rejections - prevent console spam
         event.preventDefault() // Prevent the error from bubbling up
+      }
+      
+      // Handle authentication fetch errors during AFK
+      if (event.reason && (
+        (typeof event.reason === 'string' && (event.reason.includes('Failed to fetch') || event.reason.includes('AuthRetryableFetchError'))) ||
+        (event.reason.message && (event.reason.message.includes('Failed to fetch') || event.reason.message.includes('AuthRetryableFetchError'))) ||
+        (event.reason.name && event.reason.name === 'AuthRetryableFetchError')
+      )) {
+        if (typeof document !== 'undefined' && document.hidden) {
+          // Silently handle auth fetch errors during AFK
+          event.preventDefault()
+        }
       }
     }
     

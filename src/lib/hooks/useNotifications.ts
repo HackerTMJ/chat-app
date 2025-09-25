@@ -99,12 +99,21 @@ export function useNotifications() {
   useEffect(() => {
     const getCurrentUser = async () => {
       try {
+        // Only fetch user data when page is visible to avoid AFK fetch errors
+        if (typeof document !== 'undefined' && document.hidden) {
+          console.log('🌙 Skipping user data fetch during AFK')
+          return
+        }
+        
         const { createClient } = await import('@/lib/supabase/client')
         const supabase = createClient()
         const { data: { user } } = await supabase.auth.getUser()
         currentUserIdRef.current = user?.id || null
       } catch (error) {
-        console.error('Failed to get current user:', error)
+        // Silently handle auth fetch errors during AFK
+        if (typeof document === 'undefined' || !document.hidden) {
+          console.error('Failed to get current user:', error)
+        }
       }
     }
 

@@ -24,6 +24,7 @@ import { NotificationSettings } from '@/components/notifications/NotificationSet
 import { NotificationPrompt } from '@/components/notifications/NotificationPrompt'
 import { useGlobalNotifications } from '@/lib/hooks/useGlobalNotifications'
 import { SimpleThemeToggle } from '@/components/ui/SimpleThemeToggle'
+import { CacheMonitor } from '@/components/cache/CacheMonitor'
 
 export default function ChatPage() {
   const router = useRouter()
@@ -789,6 +790,9 @@ export default function ChatPage() {
             <div className="flex items-center gap-2">
               {/* Notification Settings */}
               <NotificationSettings />
+              
+              {/* Cache Monitor Dashboard */}
+              <CacheMonitor compact={true} />
               
               {/* Theme Toggle - Always visible */}
               <SimpleThemeToggle />
