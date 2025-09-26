@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Users, Hash, Calendar, Crown, Shield, User, ChevronDown, ChevronUp, UserMinus, UserPlus, UserCheck } from 'lucide-react'
 import { StatusIndicator } from './StatusIndicator'
+import { Avatar } from './Avatar'
 
 interface RoomMember {
   id: string
@@ -376,17 +377,12 @@ export function RoomInfo({ room, currentUserId }: RoomInfoProps) {
                   >
                     {/* Avatar */}
                     <div className="relative flex-shrink-0">
-                      {member.avatar_url ? (
-                        <img 
-                          src={member.avatar_url} 
-                          alt={member.username}
-                          className="w-8 h-8 rounded-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-semibold">
-                          {member.username.charAt(0).toUpperCase()}
-                        </div>
-                      )}
+                      <Avatar
+                        avatarUrl={member.avatar_url}
+                        username={member.username}
+                        userId={member.id}
+                        size="sm"
+                      />
                       {/* Status indicator */}
                       <div className="absolute -bottom-1 -right-1">
                         <StatusIndicator status={member.status as any} size="sm" />

@@ -20,11 +20,12 @@ function getPerformanceStatus(hitRate: number, bandwidthSaved: number) {
   // hitRate should already be a percentage (0-100)
   const bandwidthMB = bandwidthSaved / (1024 * 1024)
   
-  if (hitRate >= 80 && bandwidthMB >= 1) {
+  // Prioritize hit rate over bandwidth savings for accurate status
+  if (hitRate >= 80) {
     return { status: 'excellent', color: 'emerald', icon: TrendingUp, label: 'Excellent' }
-  } else if (hitRate >= 60 && bandwidthMB >= 0.5) {
+  } else if (hitRate >= 65) {
     return { status: 'good', color: 'green', icon: TrendingUp, label: 'Good' }
-  } else if (hitRate >= 40 || bandwidthMB >= 0.1) {
+  } else if (hitRate >= 45) {
     return { status: 'average', color: 'yellow', icon: Minus, label: 'Average' }
   } else {
     return { status: 'poor', color: 'red', icon: TrendingDown, label: 'Poor' }
@@ -48,6 +49,16 @@ export function CacheMonitor({ compact = false, className = '' }: CacheMonitorPr
   const combinedHitRate = Math.min(stats.hitRate * 100, 100) // Convert to percentage and cap at 100%
   const totalBandwidthSaved = stats.bandwidthSaved + bandwidthStats.bytesSaved
   const performance = getPerformanceStatus(combinedHitRate, totalBandwidthSaved) // Pass percentage directly
+
+  // Debug logging to understand why hit rate is stuck
+  console.log('Cache Monitor Debug:', {
+    rawHitRate: stats.hitRate,
+    combinedHitRate: combinedHitRate,
+    cacheHits: stats.cacheHits,
+    cacheMisses: stats.cacheMisses,
+    performance: performance.label,
+    refreshTrigger
+  })
 
   const PerformanceIcon = performance.icon
 
@@ -141,7 +152,8 @@ function CacheDashboard({
 }: CacheDashboardProps) {
   const PerformanceIcon = performance.icon
   const totalBandwidthSaved = stats.bandwidthSaved + bandwidthStats.bytesSaved
-  const combinedHitRate = (stats.hitRate + bandwidthStats.cacheHitRate) / 2
+  // Use the primary cache hit rate, not an average of two different metrics
+  const combinedHitRate = stats.hitRate
 
   return (
     <>
@@ -237,22 +249,30 @@ function CacheDashboard({
         <button
           onClick={() => {
             const result = onOptimize()
-            console.log('⚡ Cache optimized:', result)
+            console.log('⚡ Cache optimized with hit rate boost:', result)
+            // Show optimization feedback
+            if (result.hitRateImprovement > 0) {
+              console.log(`🎯 Hit rate improved by ${(result.hitRateImprovement * 100).toFixed(1)}%`)
+            }
           }}
           className="flex-1 px-3 py-2 bg-blue-600/20 text-blue-400 rounded-md text-sm hover:bg-blue-600/30 transition-colors border border-blue-600/30 flex items-center justify-center gap-2"
         >
           <Zap className="w-4 h-4" />
-          Optimize
+          Optimize Hit Rate
         </button>
         <button
           onClick={() => {
             const result = onDeepClean()
-            console.log('🚀 Deep clean completed:', result)
+            console.log('🚀 Deep clean with performance boost:', result)
+            // Show deep clean feedback
+            if (result.hitRateImprovement > 0) {
+              console.log(`🔥 Hit rate boosted by ${(result.hitRateImprovement * 100).toFixed(1)}%`)
+            }
           }}
           className="flex-1 px-3 py-2 bg-purple-600/20 text-purple-400 rounded-md text-sm hover:bg-purple-600/30 transition-colors border border-purple-600/30 flex items-center justify-center gap-2"
         >
           <TrendingUp className="w-4 h-4" />
-          Deep Clean
+          Deep Optimize
         </button>
       </div>
     </>

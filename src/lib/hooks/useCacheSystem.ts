@@ -87,6 +87,10 @@ export function useCacheSystem() {
     return cacheSystem.deepClean()
   }, [])
 
+  const warmCache = useCallback(async (roomId: string, userId: string) => {
+    await cacheSystem.warmCache(roomId, userId)
+  }, [])
+
   return {
     stats,
     isOnline,
@@ -98,6 +102,7 @@ export function useCacheSystem() {
     cacheRoom,
     getCachedRoom,
     prefetchRoomMessages,
+    warmCache,
     clearCache,
     clearMessages,
     exportCache,

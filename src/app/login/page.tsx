@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 import { MessageCircle } from 'lucide-react'
+import Link from 'next/link'
 
 function LoginForm() {
   const supabase = createClient()
@@ -65,9 +66,24 @@ function LoginForm() {
         </div>
         
         <div className="mt-6 text-center">
-          <p className="text-sm text-gray-500">
-            By signing in, you agree to our terms of service
+          <p className="text-sm text-gray-500 mb-3">
+            By signing in, you agree to our{' '}
+            <Link href="/terms" className="text-blue-400 hover:text-blue-300 underline transition-colors">
+              Terms of Service
+            </Link>{' '}
+            and{' '}
+            <Link href="/privacy" className="text-blue-400 hover:text-blue-300 underline transition-colors">
+              Privacy Policy
+            </Link>
           </p>
+          <div className="pt-3 border-t border-gray-700">
+            <Link 
+              href="/" 
+              className="text-sm text-gray-400 hover:text-gray-300 transition-colors flex items-center justify-center gap-1"
+            >
+              ← Back to Home
+            </Link>
+          </div>
         </div>
       </div>
     </div>

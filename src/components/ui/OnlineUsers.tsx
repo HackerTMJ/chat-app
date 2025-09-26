@@ -1,6 +1,7 @@
 'use client'
 
 import { UserPresence } from '@/lib/hooks/usePresence'
+import { Avatar } from '@/components/ui/Avatar'
 
 interface OnlineUsersProps {
   users: UserPresence[]
@@ -34,9 +35,12 @@ export function OnlineUsers({ users, currentUserId }: OnlineUsersProps) {
             key={user.user_id}
             className="flex items-center gap-2 text-sm"
           >
-            <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center text-white text-xs">
-              {user.username?.[0]?.toUpperCase() || '?'}
-            </div>
+            <Avatar
+              avatarUrl={user.avatar_url}
+              username={user.username || 'Anonymous'}
+              userId={user.user_id}
+              size="xs"
+            />
             <span className={`truncate ${
               user.user_id === currentUserId ? 'font-medium text-green-400' : 'text-gray-300'
             }`}>

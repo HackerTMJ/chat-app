@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useChatStore, Message, Room } from '@/lib/stores/chat'
 import { realtimeOptimizer, bandwidthMonitor } from '@/lib/cache/RealtimeOptimizer'
+import { soundManager } from '@/lib/sounds/SoundManager'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 
 export function useRealTimeMessages(roomId: string | null) {
@@ -214,6 +215,14 @@ export function useRealTimeMessages(roomId: string | null) {
                     
                     addMessage(messageWithProfile)
                     bandwidthMonitor.recordRequest(JSON.stringify(messageWithProfile).length, false)
+                    
+                    // Play sound notification for new messages
+                    const isOwnMessage = optimizedMessage.user_id === user.id
+                    const isWindowFocused = !document.hidden
+                    soundManager.playMessageSound({ 
+                      isOwnMessage, 
+                      isWindowFocused 
+                    }).catch(e => console.warn('Sound notification failed:', e))
                   } catch (error) {
                     if (!isMounted) return
                     
@@ -225,6 +234,14 @@ export function useRealTimeMessages(roomId: string | null) {
                     
                     addMessage(messageWithoutProfile)
                     bandwidthMonitor.recordRequest(JSON.stringify(messageWithoutProfile).length, false)
+                    
+                    // Play sound notification for new messages
+                    const isOwnMessage = optimizedMessage.user_id === user.id
+                    const isWindowFocused = !document.hidden
+                    soundManager.playMessageSound({ 
+                      isOwnMessage, 
+                      isWindowFocused 
+                    }).catch(e => console.warn('Sound notification failed:', e))
                   }
                 })
               } catch (error) {

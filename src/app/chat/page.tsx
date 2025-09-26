@@ -12,6 +12,7 @@ import { TypingIndicator } from '@/components/ui/TypingIndicator'
 import { StatusSelector } from '@/components/ui/StatusSelector'
 import { StatusIndicator } from '@/components/ui/StatusIndicator'
 import { useConfirmation } from '@/components/ui/ConfirmationDialog'
+import { Avatar } from '@/components/ui/Avatar'
 import { userCacheManager } from '@/lib/cache/UserCacheManager'
 import { useChatStore } from '@/lib/stores/chat'
 import { useRealTimeMessages, useLoadMessages, useLoadRooms, useSendMessage, useCreateRoom, useJoinRoom, useDeleteRoom, useLeaveRoom } from '@/lib/hooks/useChat'
@@ -20,11 +21,12 @@ import { useTypingIndicator } from '@/lib/hooks/useTypingIndicator'
 import { useUserStatus } from '@/lib/hooks/useUserStatus'
 import { useRouter } from 'next/navigation'
 import { MessageCircle, Send, Plus, Link2, Hash, LogOut, Settings, Phone, Share2, RefreshCw, Edit3, Trash2, Save, X, Check, ChevronLeft, ChevronRight, Search, ChevronDown } from 'lucide-react'
-import { NotificationSettings } from '@/components/notifications/NotificationSettings'
 import { NotificationPrompt } from '@/components/notifications/NotificationPrompt'
 import { useGlobalNotifications } from '@/lib/hooks/useGlobalNotifications'
 import { SimpleThemeToggle } from '@/components/ui/SimpleThemeToggle'
 import { CacheMonitor } from '@/components/cache/CacheMonitor'
+import { SettingsDashboard } from '@/components/ui/SettingsDashboard'
+import { soundManager } from '@/lib/sounds/SoundManager'
 
 export default function ChatPage() {
   const router = useRouter()
@@ -46,6 +48,9 @@ export default function ChatPage() {
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [autoScroll, setAutoScroll] = useState(true)
+  const [showSettingsDashboard, setShowSettingsDashboard] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false)
 
   const {
     currentRoom,
@@ -229,6 +234,11 @@ export default function ChatPage() {
     const isNearBottom = scrollHeight - scrollTop - clientHeight < 100
     setShowScrollButton(!isNearBottom)
     
+    // Reset unread count when user scrolls to bottom
+    if (isNearBottom && unreadCount > 0) {
+      setUnreadCount(0)
+    }
+    
     // Update auto-scroll preference based on user behavior
     setAutoScroll(isNearBottom)
   }
@@ -239,8 +249,12 @@ export default function ChatPage() {
       scrollToBottom()
       // Additional scroll attempt after a short delay
       setTimeout(() => scrollToBottom(false), 50)
+    } else if (messages.length > 0 && !autoScroll && showScrollButton) {
+      // If user is scrolled up and new messages arrive, increment unread count
+      const newMessageCount = 1 // Simplified - in a real app, you'd track the actual new message count
+      setUnreadCount(prev => prev + newMessageCount)
     }
-  }, [messages, autoScroll])
+  }, [messages, autoScroll, showScrollButton])
 
   // Scroll to bottom on initial load and room change
   useEffect(() => {
@@ -249,6 +263,7 @@ export default function ChatPage() {
       setTimeout(() => scrollToBottom(false), 100)
       setAutoScroll(true)
       setShowScrollButton(false)
+      setUnreadCount(0) // Reset unread count when switching rooms
     }
   }, [currentRoom?.id, messages.length])
 
@@ -611,12 +626,19 @@ export default function ChatPage() {
   }
   
   return (
-    <div className="chat-container flex h-screen max-h-screen overflow-hidden">
+    <div className="chat-container flex h-screen max-h-screen overflow-hidden relative">
       {/* Notification Prompt */}
       <NotificationPrompt />
       
+      {/* Mobile Menu Overlay */}
+      <div className={`fixed inset-0 bg-black/50 z-30 lg:hidden transition-opacity duration-300 ${
+        !isMobileSidebarOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'
+      }`} onClick={() => setIsMobileSidebarOpen(false)} />
+      
       {/* Sidebar - Rooms */}
-      <div className="w-64 chat-sidebar flex flex-col shadow-2xl border-r border-gray-200 dark:border-gray-700">
+      <div className={`w-64 lg:w-64 md:w-60 sm:w-full chat-sidebar flex flex-col shadow-2xl border-r border-gray-200 dark:border-gray-700 z-40 transition-transform duration-300 lg:translate-x-0 ${
+        !isMobileSidebarOpen ? '-translate-x-full lg:translate-x-0' : 'translate-x-0'
+      } fixed lg:relative h-full lg:h-auto`}>
         <div className="p-4 chat-header border-b border-primary">
           <div className="flex items-center gap-3 mb-3">
             <MessageCircle size={20} className="text-blue-600 drop-shadow-lg" />
@@ -765,31 +787,50 @@ export default function ChatPage() {
       </div>
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col lg:ml-0 ml-0">
         {/* Chat Header */}
         <div className="chat-header p-4 shadow-lg">
           <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-xl font-bold text-primary flex items-center gap-3">
-                <div className="p-2 bg-blue-500/20 rounded-lg">
-                  <MessageCircle size={24} className="text-blue-600" />
-                </div>
-                <span className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                  {currentRoom?.name || 'Select a room'}
-                </span>
-              </h1>
-              {currentRoom && (
-                <p className="text-sm text-secondary flex items-center gap-2 ml-12 mt-1">
-                  <Hash size={12} />
-                  <span className="font-mono card px-2 py-1 rounded text-xs">
-                    {currentRoom.code}
+            <div className="flex items-center gap-3">
+              {/* Mobile Menu Button */}
+              <button
+                onClick={() => setIsMobileSidebarOpen(true)}
+                className="lg:hidden p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                title="Open menu"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+              
+              <div>
+                <h1 className="text-lg lg:text-xl font-bold text-primary flex items-center gap-3">
+                  <div className="p-2 bg-blue-500/20 rounded-lg">
+                    <MessageCircle size={24} className="text-blue-600" />
+                  </div>
+                  <span className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                    {currentRoom?.name || 'Select a room'}
                   </span>
-                </p>
-              )}
+                </h1>
+                {currentRoom && (
+                  <p className="text-sm text-secondary flex items-center gap-2 ml-12 mt-1">
+                    <Hash size={12} />
+                    <span className="font-mono card px-2 py-1 rounded text-xs">
+                      {currentRoom.code}
+                    </span>
+                  </p>
+                )}
+              </div>
             </div>
             <div className="flex items-center gap-2">
-              {/* Notification Settings */}
-              <NotificationSettings />
+              {/* Settings Dashboard */}
+              <button
+                onClick={() => setShowSettingsDashboard(true)}
+                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                title="Settings"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
               
               {/* Cache Monitor Dashboard */}
               <CacheMonitor compact={true} />
@@ -902,13 +943,14 @@ export default function ChatPage() {
                     isCurrentUser ? 'flex-row-reverse' : ''
                   } ${isHighlighted ? 'bg-yellow-100 dark:bg-yellow-900/20 p-3 rounded-lg border border-yellow-300 dark:border-yellow-700' : ''}`}
                 >
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold shadow-lg ${
-                    isCurrentUser 
-                      ? 'bg-gradient-to-br from-green-500 to-green-600' 
-                      : 'bg-gradient-to-br from-blue-500 to-blue-600'
-                  }`}>
-                    {avatarLetter}
-                  </div>
+                  <Avatar
+                    email={message.profiles?.email}
+                    avatarUrl={message.profiles?.avatar_url}
+                    username={message.profiles?.username || 'Anonymous User'}
+                    userId={message.user_id}
+                    size="md"
+                    className="shadow-lg flex-shrink-0"
+                  />
                   <div className={`flex flex-col min-w-0 ${isCurrentUser ? 'items-end' : 'items-start'}`}>
                     <div className={`flex items-center gap-2 mb-2 ${isCurrentUser ? 'flex-row-reverse' : ''}`}>
                       <span className={`font-semibold text-sm ${
@@ -1002,20 +1044,53 @@ export default function ChatPage() {
           )}
           <div ref={messagesEndRef} />
           
-          {/* Floating Scroll to Bottom Button */}
+          {/* Modern Floating Scroll to Bottom Button */}
           {showScrollButton && (
-            <button
-              type="button"
-              onClick={() => {
-                scrollToBottom()
-                setShowScrollButton(false)
-                setAutoScroll(true)
-              }}
-              className="absolute bottom-4 right-4 bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-lg transition-all duration-200 flex items-center justify-center z-10 border-2 border-white"
-              title="Scroll to bottom"
-            >
-              <ChevronDown size={20} />
-            </button>
+            <div className="absolute bottom-4 right-4 lg:bottom-6 lg:right-6 z-20">
+              <button
+                type="button"
+                onClick={() => {
+                  scrollToBottom()
+                  setShowScrollButton(false)
+                  setAutoScroll(true)
+                  setUnreadCount(0)
+                }}
+                className="group relative bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 p-2 lg:p-3 rounded-lg lg:rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 active:scale-95 border border-gray-200 dark:border-gray-600"
+                title={unreadCount > 0 ? `${unreadCount} new message${unreadCount > 1 ? 's' : ''}` : "Scroll to bottom"}
+              >
+                {/* Subtle ripple effect background */}
+                <div className="absolute inset-0 rounded-xl bg-gray-100 dark:bg-gray-700 opacity-0 group-hover:opacity-50 transition-opacity duration-300"></div>
+                
+                {/* Unread count badge */}
+                {unreadCount > 0 && (
+                  <div className="absolute -top-2 -right-2 bg-blue-600 text-white text-xs font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1 shadow-md">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </div>
+                )}
+                
+                {/* Icon with subtle animation */}
+                <div className="relative z-10 flex items-center justify-center">
+                  <ChevronDown 
+                    size={20} 
+                    className="transform group-hover:translate-y-0.5 transition-transform duration-200" 
+                  />
+                </div>
+                
+                {/* Subtle pulse animation ring - only show when there are unread messages */}
+                {unreadCount > 0 && (
+                  <div className="absolute inset-0 rounded-xl bg-blue-500/20 animate-pulse"></div>
+                )}
+                
+                {/* Enhanced Tooltip */}
+                <div className="absolute bottom-full right-0 mb-3 px-3 py-2 bg-gray-900 dark:bg-gray-700 text-white dark:text-gray-200 text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-200 transform translate-y-1 group-hover:translate-y-0 whitespace-nowrap shadow-lg">
+                  {unreadCount > 0 
+                    ? `${unreadCount} new message${unreadCount > 1 ? 's' : ''} • Click to scroll` 
+                    : 'Scroll to bottom'
+                  }
+                  <div className="absolute top-full right-4 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900 dark:border-t-gray-700"></div>
+                </div>
+              </button>
+            </div>
           )}
           </div>
         </div>
@@ -1025,24 +1100,24 @@ export default function ChatPage() {
 
         {/* Message Input */}
         {currentRoom && (
-          <div className="chat-input-area p-6">
-            <form onSubmit={handleSendMessage} className="flex gap-3 items-stretch">
+          <div className="chat-input-area p-3 lg:p-6">
+            <form onSubmit={handleSendMessage} className="flex gap-2 lg:gap-3 items-stretch">
               <input
                 type="text"
                 value={messageText}
                 onChange={handleInputChange}
                 onBlur={handleInputBlur}
                 placeholder="Type your message..."
-                className="flex-1 p-4 chat-input rounded-2xl shadow-lg"
+                className="flex-1 p-3 lg:p-4 chat-input rounded-xl lg:rounded-2xl shadow-lg text-sm lg:text-base"
                 disabled={isLoading}
               />
               
               <Button
                 type="submit"
                 disabled={!messageText.trim() || isLoading}
-                className="btn-primary p-4 flex items-center gap-2 rounded-2xl shadow-lg disabled:opacity-50"
+                className="btn-primary p-3 lg:p-4 flex items-center gap-2 rounded-xl lg:rounded-2xl shadow-lg disabled:opacity-50"
               >
-                <Send size={18} />
+                <Send size={16} className="lg:size-[18px]" />
                 <span className="hidden sm:inline">Send</span>
               </Button>
             </form>
@@ -1052,13 +1127,19 @@ export default function ChatPage() {
 
       {/* Right Sidebar - Room Info */}
       {currentRoom && user && !isRightSidebarCollapsed && (
-        <div className="w-80 chat-sidebar flex flex-col shadow-2xl border-l border-primary">
+        <div className="w-80 lg:w-80 md:w-72 sm:w-full chat-sidebar hidden lg:flex flex-col shadow-2xl border-l border-primary">
           <div className="p-4 h-full overflow-y-auto custom-scrollbar">
             <RoomInfo room={currentRoom} currentUserId={user.id} />
           </div>
         </div>
       )}
       
+      {/* Settings Dashboard */}
+      <SettingsDashboard
+        isOpen={showSettingsDashboard}
+        onClose={() => setShowSettingsDashboard(false)}
+      />
+
       {/* Confirmation Dialog */}
       <ConfirmationComponent />
     </div>
