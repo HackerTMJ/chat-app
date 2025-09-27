@@ -60,7 +60,7 @@ export default function HomePage() {
                     Welcome, {user.email}
                   </span>
                   <Button onClick={() => router.push('/chat')} size="sm">
-                    Go to Chat
+                    Start Chatting
                   </Button>
                 </div>
               ) : (
@@ -145,8 +145,8 @@ export default function HomePage() {
               },
               {
                 icon: Users,
-                title: 'Room-Based Chat',
-                description: 'Create private or public rooms and invite others with simple room codes'
+                title: 'Discord-style Friends',
+                description: 'Add friends, manage relationships, and enjoy private couple/friend chats - all integrated!'
               },
               {
                 icon: Shield,

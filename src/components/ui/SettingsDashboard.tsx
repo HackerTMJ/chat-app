@@ -1,7 +1,4 @@
-/**
- * Settings Dashboard - Comprehensive settings page for all user preferences
- * Consolidates profile settings, sound settings, avatar upload, and other configurations
- */
+
 
 'use client'
 

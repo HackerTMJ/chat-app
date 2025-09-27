@@ -20,13 +20,16 @@ import { useRoomPresence } from '@/lib/hooks/usePresence'
 import { useTypingIndicator } from '@/lib/hooks/useTypingIndicator'
 import { useUserStatus } from '@/lib/hooks/useUserStatus'
 import { useRouter } from 'next/navigation'
-import { MessageCircle, Send, Plus, Link2, Hash, LogOut, Settings, Phone, Share2, RefreshCw, Edit3, Trash2, Save, X, Check, ChevronLeft, ChevronRight, Search, ChevronDown } from 'lucide-react'
+import { MessageCircle, Send, Plus, Link2, Hash, LogOut, Settings, Phone, Share2, RefreshCw, Edit3, Trash2, Save, X, Check, ChevronLeft, ChevronRight, Search, ChevronDown, Heart } from 'lucide-react'
 import { NotificationPrompt } from '@/components/notifications/NotificationPrompt'
 import { useGlobalNotifications } from '@/lib/hooks/useGlobalNotifications'
 import { SimpleThemeToggle } from '@/components/ui/SimpleThemeToggle'
 import { CacheMonitor } from '@/components/cache/CacheMonitor'
 import { SettingsDashboard } from '@/components/ui/SettingsDashboard'
 import { soundManager } from '@/lib/sounds/SoundManager'
+import FriendsSidebar from '@/components/friends/FriendsSidebar'
+import FriendChat from '@/components/friends/FriendChat'
+import type { FriendshipWithProfile, CoupleRoomWithDetails } from '@/types/friends'
 
 export default function ChatPage() {
   const router = useRouter()
@@ -51,6 +54,11 @@ export default function ChatPage() {
   const [showSettingsDashboard, setShowSettingsDashboard] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false)
+  
+  // Friend chat states
+  const [isFriendChatMode, setIsFriendChatMode] = useState(false)
+  const [currentFriendship, setCurrentFriendship] = useState<FriendshipWithProfile | null>(null)
+  const [currentCoupleRoom, setCurrentCoupleRoom] = useState<CoupleRoomWithDetails | null>(null)
 
   const {
     currentRoom,
@@ -617,6 +625,21 @@ export default function ChatPage() {
     }
   }
 
+  // Friend Chat Handlers
+  const handleFriendChatSelect = (friendship: FriendshipWithProfile, coupleRoom?: CoupleRoomWithDetails) => {
+    setIsFriendChatMode(true)
+    setCurrentFriendship(friendship)
+    setCurrentCoupleRoom(coupleRoom || null)
+    setCurrentRoom(null) // Exit regular chat room
+    setIsMobileSidebarOpen(false) // Close mobile sidebar
+  }
+
+  const handleBackToRegularChat = () => {
+    setIsFriendChatMode(false)
+    setCurrentFriendship(null)
+    setCurrentCoupleRoom(null)
+  }
+
   if (!user) {
     return (
       <div className="chat-container flex items-center justify-center min-h-screen">
@@ -657,6 +680,14 @@ export default function ChatPage() {
         
         <div className="flex-1 overflow-y-auto custom-scrollbar">
           <div className="p-4">
+            {/* Friends Section */}
+            {user && (
+              <FriendsSidebar
+                currentUserId={user.id}
+                onFriendChatSelect={handleFriendChatSelect}
+              />
+            )}
+            
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-muted uppercase tracking-wide">Rooms</h3>
               <div className="flex gap-1">
@@ -904,8 +935,20 @@ export default function ChatPage() {
           )}
         </div>
         
-        {/* Messages Area */}
-        <div className="flex-1 relative min-h-0 flex flex-col">
+        {/* Main Content - Either Regular Chat or Friend Chat */}
+        {isFriendChatMode && currentFriendship ? (
+          <div className="flex-1 min-h-0 flex flex-col">
+            <FriendChat
+              friendship={currentFriendship}
+              coupleRoom={currentCoupleRoom || undefined}
+              currentUserId={user?.id || ''}
+              onBack={handleBackToRegularChat}
+            />
+          </div>
+        ) : (
+          <>
+            {/* Messages Area */}
+            <div className="flex-1 relative min-h-0 flex flex-col">
           <div 
             ref={messagesContainerRef}
             className="flex-1 overflow-y-auto p-6 space-y-4 chat-messages custom-scrollbar"
@@ -1122,6 +1165,8 @@ export default function ChatPage() {
               </Button>
             </form>
           </div>
+        )}
+        </>
         )}
       </div>
 
