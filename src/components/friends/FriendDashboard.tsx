@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { X, Users, UserPlus, Clock, Shield, Search, Check, UserX, MessageCircle } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import Avatar from '@/components/ui/Avatar'
@@ -26,6 +27,11 @@ export default function FriendDashboard({ isOpen, onClose, currentUserId, onStar
   const [addFriendInput, setAddFriendInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [message, setMessage] = useState('')
+  const [isMounted, setIsMounted] = useState(false)
+
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
 
   useEffect(() => {
     if (isOpen) {
@@ -128,9 +134,9 @@ export default function FriendDashboard({ isOpen, onClose, currentUserId, onStar
   const pendingCount = friendships.filter(f => f.status === 'pending').length
   const friendsCount = friendships.filter(f => f.status === 'accepted').length
 
-  if (!isOpen) return null
+  if (!isOpen || !isMounted) return null
 
-  return (
+  const modalContent = (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div 
@@ -386,4 +392,6 @@ export default function FriendDashboard({ isOpen, onClose, currentUserId, onStar
       </div>
     </div>
   )
+
+  return createPortal(modalContent, document.body)
 }

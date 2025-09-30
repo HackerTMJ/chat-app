@@ -150,7 +150,7 @@ export default function PrivacyPolicyPage() {
               </h2>
               <p className="text-gray-600 dark:text-gray-300 mb-4">
                 We may update this privacy policy from time to time. We will notify you of any material changes 
-                by posting the new policy on this page and updating the "last updated" date.
+                by posting the new policy on this page and updating the &quot;last updated&quot; date.
               </p>
             </section>
 

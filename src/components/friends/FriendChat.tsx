@@ -5,7 +5,7 @@ import { Send, Heart, ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import Avatar from '@/components/ui/Avatar'
 import { FriendshipWithProfile, CoupleRoomWithDetails, CoupleMessage } from '@/types/friends'
-import { getCoupleMessages, sendCoupleMessage } from '@/lib/friends/api'
+import { useCoupleMessageCache } from '@/lib/hooks/useCoupleMessageCache'
 import { createClient } from '@/lib/supabase/client'
 
 interface FriendChatProps {
@@ -18,39 +18,20 @@ interface FriendChatProps {
 const supabase = createClient()
 
 export default function FriendChat({ friendship, coupleRoom, currentUserId, onBack }: FriendChatProps) {
-  const [messages, setMessages] = useState<CoupleMessage[]>([])
   const [messageText, setMessageText] = useState('')
-  const [isLoading, setIsLoading] = useState(true)
   const [isSending, setIsSending] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  
+  // Use the cache hook for messages
+  const { messages, loading: isLoading, addMessage, sendMessage } = useCoupleMessageCache(coupleRoom?.id || null)
 
   const friend = friendship.friend_profile
   const relationshipIcon = friendship.relationship_type === 'couple' ? '💕' : 
                          friendship.relationship_type === 'bestfriend' ? '👯' : '👫'
 
   useEffect(() => {
-    if (coupleRoom) {
-      loadMessages()
-    }
-  }, [coupleRoom])
-
-  useEffect(() => {
     scrollToBottom()
   }, [messages])
-
-  const loadMessages = async () => {
-    if (!coupleRoom) return
-
-    try {
-      setIsLoading(true)
-      const messagesData = await getCoupleMessages(coupleRoom.id)
-      setMessages(messagesData)
-    } catch (error) {
-      console.error('Error loading messages:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -63,15 +44,13 @@ export default function FriendChat({ friendship, coupleRoom, currentUserId, onBa
     try {
       setIsSending(true)
       
-      await sendCoupleMessage({
+      await sendMessage({
         room_id: coupleRoom.id,
         content: messageText.trim(),
         message_type: 'text'
       })
 
       setMessageText('')
-      // Reload messages to get the new one
-      await loadMessages()
       
     } catch (error) {
       console.error('Error sending message:', error)

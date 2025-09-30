@@ -4,7 +4,8 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Dialog } from '@/components/ui/Dialog'
 import { Heart, Send, Smile, MoreVertical, Gift, Calendar, Camera } from 'lucide-react'
 import { CoupleRoom, CoupleMessage, RelationshipStatus } from '@/types/friends'
-import { getCoupleMessages, sendCoupleMessage, subscribeToCoupleRoom } from '@/lib/friends/api'
+import { useCoupleMessageCache } from '@/lib/hooks/useCoupleMessageCache'
+import { subscribeToCoupleRoom } from '@/lib/friends/api'
 import Avatar from '@/components/ui/Avatar'
 
 interface CoupleChatProps {
@@ -31,11 +32,15 @@ export default function CoupleChat({
 }: CoupleChatProps) {
   // Friend List Popup State
   const [showFriendList, setShowFriendList] = useState(false)
-  const [messages, setMessages] = useState<MessageWithHearts[]>([])
   const [newMessage, setNewMessage] = useState('')
-  const [isLoading, setIsLoading] = useState(true)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  
+  // Use the cache hook for messages
+  const { messages: cachedMessages, loading: isLoading, addMessage, sendMessage } = useCoupleMessageCache(room.id)
+  
+  // Add heart reactions to cached messages
+  const [messages, setMessages] = useState<MessageWithHearts[]>([])
 
   // Chat themes based on relationship type
   const getThemeStyles = () => {
@@ -52,40 +57,31 @@ export default function CoupleChat({
     return themes[baseTheme as keyof typeof themes] || themes.default
   }
 
-  // Load messages on component mount
+  // Sync cached messages with local state (for heart reactions)
   useEffect(() => {
-    loadMessages()
-    
-    // Subscribe to real-time updates
+    setMessages(cachedMessages.map(msg => ({
+      ...msg,
+      heart_reactions: Math.floor(Math.random() * 3), // Mock data for now
+      user_hearted: false
+    })))
+  }, [cachedMessages])
+
+  // Subscribe to real-time updates
+  useEffect(() => {
     const unsubscribe = subscribeToCoupleRoom(room.id, (message) => {
-      setMessages(prev => [...prev, message as MessageWithHearts])
+      addMessage(message)
       scrollToBottom()
     })
     
     return () => {
       unsubscribe?.unsubscribe()
     }
-  }, [room.id])
+  }, [room.id, addMessage])
 
   // Scroll to bottom when messages change
   useEffect(() => {
     scrollToBottom()
   }, [messages])
-
-  const loadMessages = async () => {
-    try {
-      const roomMessages = await getCoupleMessages(room.id)
-      setMessages(roomMessages.map(msg => ({
-        ...msg,
-        heart_reactions: Math.floor(Math.random() * 3), // Mock data for now
-        user_hearted: false
-      })))
-    } catch (error) {
-      console.error('Error loading messages:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -96,9 +92,10 @@ export default function CoupleChat({
     if (!newMessage.trim()) return
 
     try {
-      await sendCoupleMessage({
+      await sendMessage({
         room_id: room.id,
-        content: newMessage.trim()
+        content: newMessage.trim(),
+        message_type: 'text'
       })
       setNewMessage('')
     } catch (error) {

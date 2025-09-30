@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { cacheSystem, type Message, type User, type Room, type CacheStats } from '../cache/CacheSystemManager'
+import { cacheSystem, type Message, type CoupleMessage, type User, type Room, type RoomMember, type RoomInfo, type CacheStats } from '../cache/CacheSystemManager'
 
 export function useCacheSystem() {
   const [stats, setStats] = useState<CacheStats>(cacheSystem.getStats())
@@ -59,6 +59,34 @@ export function useCacheSystem() {
     return cacheSystem.getRoom(id)
   }, [])
 
+  const cacheCoupleMessage = useCallback(async (message: CoupleMessage, fromNetwork = false) => {
+    await cacheSystem.cacheCoupleMessage(message, fromNetwork)
+  }, [])
+
+  const getCachedCoupleMessage = useCallback(async (id: string) => {
+    return await cacheSystem.getCoupleMessage(id)
+  }, [])
+
+  const getCachedCoupleMessagesByRoom = useCallback(async (roomId: string, limit = 50, offset = 0) => {
+    return await cacheSystem.getCoupleMessagesByRoom(roomId, limit, offset)
+  }, [])
+
+  const cacheRoomInfo = useCallback(async (roomInfo: RoomInfo, fromNetwork = false) => {
+    await cacheSystem.cacheRoomInfo(roomInfo, fromNetwork)
+  }, [])
+
+  const getCachedRoomInfo = useCallback(async (roomId: string) => {
+    return await cacheSystem.getCachedRoomInfo(roomId)
+  }, [])
+
+  const getCachedRoomMembers = useCallback(async (roomId: string) => {
+    return await cacheSystem.getCachedRoomMembers(roomId)
+  }, [])
+
+  const updateRoomMemberStatus = useCallback(async (memberId: string, roomId: string, status: string) => {
+    await cacheSystem.updateRoomMemberStatus(memberId, roomId, status)
+  }, [])
+
   const prefetchRoomMessages = useCallback(async (roomId: string, count = 20) => {
     await cacheSystem.prefetchRoomMessages(roomId, count)
   }, [])
@@ -97,10 +125,17 @@ export function useCacheSystem() {
     cacheMessage,
     getCachedMessage,
     getCachedMessagesByRoom,
+    cacheCoupleMessage,
+    getCachedCoupleMessage,
+    getCachedCoupleMessagesByRoom,
     cacheUser,
     getCachedUser,
     cacheRoom,
     getCachedRoom,
+    cacheRoomInfo,
+    getCachedRoomInfo,
+    getCachedRoomMembers,
+    updateRoomMemberStatus,
     prefetchRoomMessages,
     warmCache,
     clearCache,
@@ -233,8 +268,104 @@ export function useUserCache() {
   }
 }
 
+// Room Info Cache Hook
+export function useRoomInfoCache(roomId: string | null) {
+  const [roomInfo, setRoomInfo] = useState<RoomInfo | null>(null)
+  const [members, setMembers] = useState<RoomMember[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  
+  const { cacheRoomInfo, getCachedRoomInfo, getCachedRoomMembers, updateRoomMemberStatus } = useCacheSystem()
+
+  const loadRoomInfo = useCallback(async () => {
+    if (!roomId) {
+      setRoomInfo(null)
+      setMembers([])
+      setLoading(false)
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+    
+    try {
+      // Try to load from cache first
+      const cachedRoomInfo = await getCachedRoomInfo(roomId)
+      if (cachedRoomInfo) {
+        console.log(`✅ Loaded room info from cache: ${cachedRoomInfo.room.name}`)
+        setRoomInfo(cachedRoomInfo)
+        setMembers(cachedRoomInfo.members)
+        setLoading(false)
+      } else {
+        // If no cached room info, fetch from network
+        console.log(`📡 No cached room info for room ${roomId}, fetching from server...`)
+        const networkRoomInfo = await fetchRoomInfoFromNetwork(roomId)
+        if (networkRoomInfo) {
+          await cacheRoomInfo(networkRoomInfo, true)
+          setRoomInfo(networkRoomInfo)
+          setMembers(networkRoomInfo.members)
+        }
+        setLoading(false)
+      }
+    } catch (err: any) {
+      console.error('Error loading room info:', err)
+      setError(err.message || 'Failed to load room info')
+      setLoading(false)
+    }
+  }, [roomId, getCachedRoomInfo, cacheRoomInfo])
+
+  useEffect(() => {
+    loadRoomInfo()
+  }, [loadRoomInfo])
+
+  const updateMemberStatus = useCallback(async (memberId: string, status: string) => {
+    if (!roomId) return
+    
+    try {
+      await updateRoomMemberStatus(memberId, roomId, status)
+      
+      // Update local state
+      setMembers(prev => prev.map(member => 
+        member.id === memberId ? { ...member, status } : member
+      ))
+      
+      // Update room info if it exists
+      setRoomInfo(prev => prev ? {
+        ...prev,
+        members: prev.members.map(member => 
+          member.id === memberId ? { ...member, status } : member
+        ),
+        lastUpdated: new Date().toISOString()
+      } : null)
+      
+      console.log(`🔄 Updated member status: ${memberId} -> ${status}`)
+    } catch (err: any) {
+      console.error('Error updating member status:', err)
+    }
+  }, [roomId, updateRoomMemberStatus])
+
+  const refreshRoomInfo = useCallback(() => {
+    loadRoomInfo()
+  }, [loadRoomInfo])
+
+  return {
+    roomInfo,
+    members,
+    loading,
+    error,
+    updateMemberStatus,
+    refreshRoomInfo
+  }
+}
+
 // Mock function - would be replaced with actual Supabase call
 async function fetchUserFromNetwork(userId: string): Promise<User | null> {
+  // This would be replaced with actual Supabase query
+  return null
+}
+
+// Mock function - would be replaced with actual Supabase call
+async function fetchRoomInfoFromNetwork(roomId: string): Promise<RoomInfo | null> {
   // This would be replaced with actual Supabase query
   return null
 }

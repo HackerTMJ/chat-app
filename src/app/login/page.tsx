@@ -3,17 +3,31 @@
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/Button'
 import { useSearchParams } from 'next/navigation'
-import { Suspense } from 'react'
+import { Suspense, useState, useRef } from 'react'
 import { MessageCircle } from 'lucide-react'
 import Link from 'next/link'
+import { ReCaptcha, type ReCaptchaRef } from '@/components/auth/ReCaptcha'
 
 function LoginForm() {
   const supabase = createClient()
   const searchParams = useSearchParams()
   const error = searchParams.get('error')
+  const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const recaptchaRef = useRef<ReCaptchaRef>(null)
 
   const handleGoogleLogin = async () => {
+    setIsLoading(true)
+    
     try {
+      // Execute reCAPTCHA v3
+      recaptchaRef.current?.execute()
+      
+      // Wait for token if not already set
+      if (!recaptchaToken) {
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -24,10 +38,16 @@ function LoginForm() {
       if (error) {
         console.error('Error logging in:', error.message)
         alert('Error logging in: ' + error.message)
+        recaptchaRef.current?.reset()
+        setRecaptchaToken(null)
       }
     } catch (error) {
       console.error('Unexpected error:', error)
       alert('An unexpected error occurred')
+      recaptchaRef.current?.reset()
+      setRecaptchaToken(null)
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -51,9 +71,15 @@ function LoginForm() {
         )}
         
         <div className="space-y-4">
+          <ReCaptcha
+            ref={recaptchaRef}
+            onVerify={setRecaptchaToken}
+          />
+          
           <Button 
             onClick={handleGoogleLogin}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
+            disabled={isLoading}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
               <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>

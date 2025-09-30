@@ -6,18 +6,18 @@ import { Button } from '@/components/ui/Button'
 import Avatar from '@/components/ui/Avatar'
 import { getFriendships, getCoupleRooms } from '@/lib/friends/api'
 import { FriendshipWithProfile, CoupleRoomWithDetails } from '@/types/friends'
-import FriendDashboard from './FriendDashboard'
 
 interface FriendsSidebarProps {
   currentUserId: string
   onFriendChatSelect: (friendship: FriendshipWithProfile, coupleRoom?: CoupleRoomWithDetails) => void
+  showFriendDashboard: boolean
+  onShowFriendDashboard: (show: boolean) => void
 }
 
-export default function FriendsSidebar({ currentUserId, onFriendChatSelect }: FriendsSidebarProps) {
+export default function FriendsSidebar({ currentUserId, onFriendChatSelect, showFriendDashboard, onShowFriendDashboard }: FriendsSidebarProps) {
   const [friendships, setFriendships] = useState<FriendshipWithProfile[]>([])
   const [coupleRooms, setCoupleRooms] = useState<CoupleRoomWithDetails[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [showFriendDashboard, setShowFriendDashboard] = useState(false)
   const [isExpanded, setIsExpanded] = useState(true)
 
   useEffect(() => {
@@ -51,7 +51,7 @@ export default function FriendsSidebar({ currentUserId, onFriendChatSelect }: Fr
 
   const handleStartChat = (friendship: FriendshipWithProfile) => {
     handleFriendChatClick(friendship)
-    setShowFriendDashboard(false)
+    onShowFriendDashboard(false)
   }
 
   const pendingCount = friendships.filter(f => f.status === 'pending').length
@@ -75,7 +75,7 @@ export default function FriendsSidebar({ currentUserId, onFriendChatSelect }: Fr
           <Button
             size="sm"
             variant="outline"
-            onClick={() => setShowFriendDashboard(true)}
+            onClick={() => onShowFriendDashboard(true)}
             className="text-xs flex items-center gap-1 rounded-lg"
             title="Manage Friends"
           >
@@ -96,7 +96,7 @@ export default function FriendsSidebar({ currentUserId, onFriendChatSelect }: Fr
                 <p className="text-xs text-muted mb-2">No friends yet</p>
                 <Button
                   size="sm"
-                  onClick={() => setShowFriendDashboard(true)}
+                  onClick={() => onShowFriendDashboard(true)}
                   className="text-xs"
                 >
                   Add Friends
@@ -143,13 +143,6 @@ export default function FriendsSidebar({ currentUserId, onFriendChatSelect }: Fr
         )}
       </div>
 
-      {/* Friend Dashboard Modal */}
-      <FriendDashboard
-        isOpen={showFriendDashboard}
-        onClose={() => setShowFriendDashboard(false)}
-        currentUserId={currentUserId}
-        onStartChat={handleStartChat}
-      />
     </>
   )
 }

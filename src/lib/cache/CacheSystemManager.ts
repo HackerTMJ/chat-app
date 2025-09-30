@@ -16,6 +16,20 @@ interface Message {
   reactions?: Record<string, string[]>
 }
 
+interface CoupleMessage {
+  id: string
+  room_id: string
+  sender_id: string
+  content: string
+  message_type: 'text' | 'image' | 'file'
+  is_private_note: boolean
+  created_at: string
+  sender_profile?: {
+    username: string
+    avatar_url?: string | null
+  }
+}
+
 interface User {
   id: string
   username: string
@@ -26,8 +40,27 @@ interface User {
 interface Room {
   id: string
   name: string
+  code: string
+  created_by: string
   created_at: string
   updated_at: string
+}
+
+interface RoomMember {
+  id: string
+  username: string
+  email: string
+  avatar_url: string | null
+  status: string
+  role: string
+  joined_at: string
+}
+
+interface RoomInfo {
+  room: Room
+  members: RoomMember[]
+  memberCount: number
+  lastUpdated: string
 }
 
 interface CacheStats {
@@ -61,9 +94,14 @@ interface CacheOptions {
 
 class CacheSystemManager {
   private messages: Map<string, Message> = new Map()
+  private coupleMessages: Map<string, CoupleMessage> = new Map()
   private users: Map<string, User> = new Map()
   private rooms: Map<string, Room> = new Map()
   private messagesByRoom: Map<string, string[]> = new Map()
+  private coupleMessagesByRoom: Map<string, string[]> = new Map()
+  private roomInfo: Map<string, RoomInfo> = new Map()
+  private roomMembers: Map<string, RoomMember> = new Map()
+  private roomMembersByRoom: Map<string, string[]> = new Map()
   private accessTimes: Map<string, number> = new Map()
   private compressionCache: Map<string, string> = new Map()
   private profileImages: Map<string, string> = new Map() // Cache for profile image URLs/data
@@ -188,6 +226,173 @@ class CacheSystemManager {
     }
 
     return messages.reverse() // Most recent first
+  }
+
+  // Couple message caching with compression
+  async cacheCoupleMessage(message: CoupleMessage, fromNetwork = false): Promise<void> {
+    const key = `couple_${message.id}`
+    
+    // Compress large messages
+    let compressedContent = message.content
+    if (this.options.compression.enabled && message.content.length > this.options.compression.threshold) {
+      compressedContent = await this.compressData(message.content)
+      this.compressionCache.set(key, compressedContent)
+    }
+
+    const cachedMessage = { ...message, content: compressedContent }
+    this.coupleMessages.set(key, cachedMessage)
+    this.accessTimes.set(key, Date.now())
+
+    // Update room message index
+    if (!this.coupleMessagesByRoom.has(message.room_id)) {
+      this.coupleMessagesByRoom.set(message.room_id, [])
+    }
+    const roomMessages = this.coupleMessagesByRoom.get(message.room_id)!
+    if (!roomMessages.includes(key)) {
+      roomMessages.push(key)
+      roomMessages.sort((a, b) => {
+        const msgA = this.coupleMessages.get(a)
+        const msgB = this.coupleMessages.get(b)
+        if (!msgA || !msgB) return 0
+        return new Date(msgA.created_at).getTime() - new Date(msgB.created_at).getTime()
+      })
+    }
+
+    if (fromNetwork) {
+      this.stats.bandwidthSaved += this.estimateSize(message)
+    }
+
+    this.updateStats()
+    this.enforceLimit('messages')
+    this.notifyListeners()
+  }
+
+  async getCoupleMessage(id: string): Promise<CoupleMessage | null> {
+    const key = `couple_${id}`
+    const message = this.coupleMessages.get(key)
+    
+    if (message) {
+      // Cache hit
+      this.stats.cacheHits++
+      this.accessTimes.set(key, Date.now())
+      
+      // Decompress if needed
+      let content = message.content
+      if (this.compressionCache.has(key)) {
+        content = await this.decompressData(this.compressionCache.get(key)!)
+      }
+      
+      return { ...message, content }
+    } else {
+      // Cache miss
+      this.stats.cacheMisses++
+      return null
+    }
+  }
+
+  async getCoupleMessagesByRoom(roomId: string, limit = 50, offset = 0): Promise<CoupleMessage[]> {
+    const messageIds = this.coupleMessagesByRoom.get(roomId) || []
+    const sliced = messageIds.slice(offset, offset + limit)
+    
+    const messages: CoupleMessage[] = []
+    for (const id of sliced) {
+      const message = await this.getCoupleMessage(id)
+      if (message) messages.push(message)
+    }
+
+    return messages.reverse() // Most recent first
+  }
+
+  // Room Info caching methods
+  async cacheRoomInfo(roomInfo: RoomInfo, fromNetwork = false): Promise<void> {
+    const key = `room_info_${roomInfo.room.id}`
+    
+    // Store room info
+    this.roomInfo.set(key, roomInfo)
+    this.accessTimes.set(key, Date.now())
+    
+    // Store individual members
+    for (const member of roomInfo.members) {
+      const memberKey = `room_member_${member.id}_${roomInfo.room.id}`
+      this.roomMembers.set(memberKey, member)
+      this.accessTimes.set(memberKey, Date.now())
+    }
+    
+    // Store member IDs by room
+    const memberIds = roomInfo.members.map(member => `room_member_${member.id}_${roomInfo.room.id}`)
+    this.roomMembersByRoom.set(roomInfo.room.id, memberIds)
+    
+    // Also cache the room itself
+    this.cacheRoom(roomInfo.room)
+    
+    this.updateStats()
+    this.enforceLimit('rooms')
+    this.notifyListeners()
+    
+    if (fromNetwork) {
+      console.log(`📡 Cached room info from network: ${roomInfo.room.name} (${roomInfo.memberCount} members)`)
+    } else {
+      console.log(`💾 Cached room info locally: ${roomInfo.room.name} (${roomInfo.memberCount} members)`)
+    }
+  }
+
+  async getCachedRoomInfo(roomId: string): Promise<RoomInfo | null> {
+    const key = `room_info_${roomId}`
+    const roomInfo = this.roomInfo.get(key)
+    
+    if (roomInfo) {
+      this.accessTimes.set(key, Date.now())
+      console.log(`✅ Retrieved room info from cache: ${roomInfo.room.name}`)
+      return roomInfo
+    }
+    
+    console.log(`❌ Room info not found in cache: ${roomId}`)
+    return null
+  }
+
+  async getCachedRoomMembers(roomId: string): Promise<RoomMember[]> {
+    const memberIds = this.roomMembersByRoom.get(roomId) || []
+    const members: RoomMember[] = []
+    
+    for (const memberId of memberIds) {
+      const member = this.roomMembers.get(memberId)
+      if (member) {
+        members.push(member)
+        this.accessTimes.set(memberId, Date.now())
+      }
+    }
+    
+    if (members.length > 0) {
+      console.log(`✅ Retrieved ${members.length} room members from cache for room: ${roomId}`)
+    }
+    
+    return members
+  }
+
+  async updateRoomMemberStatus(memberId: string, roomId: string, status: string): Promise<void> {
+    const memberKey = `room_member_${memberId}_${roomId}`
+    const member = this.roomMembers.get(memberKey)
+    
+    if (member) {
+      member.status = status
+      this.roomMembers.set(memberKey, member)
+      this.accessTimes.set(memberKey, Date.now())
+      
+      // Update the room info cache as well
+      const roomInfoKey = `room_info_${roomId}`
+      const roomInfo = this.roomInfo.get(roomInfoKey)
+      if (roomInfo) {
+        const memberIndex = roomInfo.members.findIndex(m => m.id === memberId)
+        if (memberIndex !== -1) {
+          roomInfo.members[memberIndex].status = status
+          roomInfo.lastUpdated = new Date().toISOString()
+          this.roomInfo.set(roomInfoKey, roomInfo)
+        }
+      }
+      
+      console.log(`🔄 Updated member status in cache: ${memberId} -> ${status}`)
+      this.notifyListeners()
+    }
   }
 
   // User caching with status optimization
@@ -510,6 +715,13 @@ class CacheSystemManager {
         this.users.delete(key.substring(5))
       } else if (key.startsWith('room_')) {
         this.rooms.delete(key.substring(5))
+      } else if (key.startsWith('room_info_')) {
+        this.roomInfo.delete(key)
+      } else if (key.startsWith('room_member_')) {
+        this.roomMembers.delete(key)
+      } else if (key.startsWith('couple_')) {
+        this.coupleMessages.delete(key)
+        this.compressionCache.delete(key)
       } else {
         this.messages.delete(key)
         this.compressionCache.delete(key)
@@ -525,6 +737,14 @@ class CacheSystemManager {
       }
     })
 
+    // Update couple room message indices
+    this.coupleMessagesByRoom.forEach((messageIds, roomId) => {
+      const filtered = messageIds.filter(id => this.coupleMessages.has(id))
+      if (filtered.length !== messageIds.length) {
+        this.coupleMessagesByRoom.set(roomId, filtered)
+      }
+    })
+
     if (expired.length > 0) {
       this.updateStats()
       this.notifyListeners()
@@ -532,57 +752,76 @@ class CacheSystemManager {
   }
 
   private enforceLimit(type: 'messages' | 'users' | 'rooms'): void {
-    let map: Map<string, any>
-    let limit: number
-    let prefix = ''
-
     switch (type) {
       case 'messages':
-        map = this.messages
-        limit = this.options.maxMessages
-        break
-      case 'users':
-        map = this.users
-        limit = this.options.maxUsers
-        prefix = 'user_'
-        break
-      case 'rooms':
-        map = this.rooms
-        limit = this.options.maxRooms
-        prefix = 'room_'
-        break
-    }
-
-    if (map.size <= limit) return
-
-    // Remove least recently used items
-    const accessEntries = Array.from(this.accessTimes.entries())
-      .filter(([key]) => prefix ? key.startsWith(prefix) : !key.startsWith('user_') && !key.startsWith('room_'))
-      .sort(([, a], [, b]) => a - b)
-
-    const toRemove = accessEntries.slice(0, map.size - limit)
-    toRemove.forEach(([key]) => {
-      const id = prefix ? key.substring(prefix.length) : key
-      map.delete(id)
-      this.accessTimes.delete(key)
-      
-      if (type === 'messages') {
-        this.compressionCache.delete(id)
-        // Update room indices
-        this.messagesByRoom.forEach((messageIds, roomId) => {
-          const index = messageIds.indexOf(id)
-          if (index !== -1) {
-            messageIds.splice(index, 1)
+        // Combine regular and couple messages for limit enforcement
+        const totalMessages = this.messages.size + this.coupleMessages.size
+        if (totalMessages <= this.options.maxMessages) return
+        
+        // Remove least recently used items from both message types
+        const messageAccessEntries = Array.from(this.accessTimes.entries())
+          .filter(([key]) => !key.startsWith('user_') && !key.startsWith('room_'))
+          .sort(([, a], [, b]) => a - b)
+        
+        const messagesToRemove = totalMessages - this.options.maxMessages
+        for (let i = 0; i < messagesToRemove && i < messageAccessEntries.length; i++) {
+          const [key] = messageAccessEntries[i]
+          if (key.startsWith('couple_')) {
+            this.coupleMessages.delete(key)
+          } else {
+            this.messages.delete(key)
           }
-        })
-      }
-    })
+          this.compressionCache.delete(key)
+          this.accessTimes.delete(key)
+        }
+        return
+      case 'users':
+        if (this.users.size <= this.options.maxUsers) return
+        
+        // Remove least recently used users
+        const userAccessEntries = Array.from(this.accessTimes.entries())
+          .filter(([key]) => key.startsWith('user_'))
+          .sort(([, a], [, b]) => a - b)
+        
+        const usersToRemove = this.users.size - this.options.maxUsers
+        for (let i = 0; i < usersToRemove && i < userAccessEntries.length; i++) {
+          const [key] = userAccessEntries[i]
+          const userId = key.substring(5) // Remove 'user_' prefix
+          this.users.delete(userId)
+          this.accessTimes.delete(key)
+        }
+        return
+      case 'rooms':
+        // Combine regular rooms and room info for limit enforcement
+        const totalRooms = this.rooms.size + this.roomInfo.size
+        if (totalRooms <= this.options.maxRooms) return
+        
+        // Remove least recently used room items
+        const roomAccessEntries = Array.from(this.accessTimes.entries())
+          .filter(([key]) => key.startsWith('room_'))
+          .sort(([, a], [, b]) => a - b)
+        
+        const roomsToRemove = totalRooms - this.options.maxRooms
+        for (let i = 0; i < roomsToRemove && i < roomAccessEntries.length; i++) {
+          const [key] = roomAccessEntries[i]
+          if (key.startsWith('room_info_')) {
+            this.roomInfo.delete(key)
+          } else if (key.startsWith('room_member_')) {
+            this.roomMembers.delete(key)
+          } else {
+            this.rooms.delete(key.substring(5))
+          }
+          this.accessTimes.delete(key)
+        }
+        return
+    }
   }
 
   private updateStats(): void {
-    const totalMessages = this.messages.size
+    const totalMessages = this.messages.size + this.coupleMessages.size
     const totalUsers = this.users.size
-    const totalRooms = this.rooms.size
+    const totalRooms = this.rooms.size + this.roomInfo.size
+    const totalRoomMembers = this.roomMembers.size
     
     this.stats = {
       messagesCount: totalMessages,
@@ -601,8 +840,11 @@ class CacheSystemManager {
   private calculateTotalSize(): number {
     let size = 0
     this.messages.forEach(msg => size += this.estimateSize(msg))
+    this.coupleMessages.forEach(msg => size += this.estimateSize(msg))
     this.users.forEach(user => size += this.estimateSize(user))
     this.rooms.forEach(room => size += this.estimateSize(room))
+    this.roomInfo.forEach(roomInfo => size += this.estimateSize(roomInfo))
+    this.roomMembers.forEach(member => size += this.estimateSize(member))
     return size
   }
 
@@ -993,5 +1235,5 @@ export const cacheSystem = new CacheSystemManager({
   enablePrefetch: true
 })
 
-export type { Message, User, Room, CacheStats, CacheOptions }
+export type { Message, CoupleMessage, User, Room, RoomMember, RoomInfo, CacheStats, CacheOptions }
 export { CacheSystemManager }

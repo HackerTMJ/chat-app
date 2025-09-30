@@ -5,16 +5,8 @@ import { createClient } from '@/lib/supabase/client'
 import { Users, Hash, Calendar, Crown, Shield, User, ChevronDown, ChevronUp, UserMinus, UserPlus, UserCheck } from 'lucide-react'
 import { StatusIndicator } from './StatusIndicator'
 import { Avatar } from './Avatar'
-
-interface RoomMember {
-  id: string
-  username: string
-  email: string
-  avatar_url: string | null
-  status: string
-  role: string
-  joined_at: string
-}
+import { useRoomInfoCache } from '@/lib/hooks/useCacheSystem'
+import type { RoomMember, RoomInfo } from '@/lib/cache/CacheSystemManager'
 
 interface RoomInfoProps {
   room: {
@@ -40,68 +32,25 @@ const ROLE_COLORS = {
 }
 
 export function RoomInfo({ room, currentUserId }: RoomInfoProps) {
-  const [members, setMembers] = useState<RoomMember[]>([])
-  const [memberCount, setMemberCount] = useState(0)
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState(true)
   const [currentUserRole, setCurrentUserRole] = useState<string>('member')
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  
+  // Use the caching hook
+  const { roomInfo, members, loading: isLoading, error, updateMemberStatus, refreshRoomInfo } = useRoomInfoCache(room.id)
+  
+  const memberCount = members.length
 
-  // Load room members function
-  const loadRoomMembers = async () => {
-    try {
-      setIsLoading(true)
-      const supabase = createClient()
-
-      // Get room members with their profile info and role
-      const { data, error } = await supabase
-        .from('room_memberships')
-        .select(`
-          user_id,
-          joined_at,
-          role,
-          profiles!inner (
-            id,
-            username,
-            email,
-            avatar_url,
-            status
-          )
-        `)
-        .eq('room_id', room.id)
-        .order('joined_at', { ascending: true })
-
-      if (error) throw error
-
-      const roomMembers: RoomMember[] = data?.map((membership: any) => ({
-        id: membership.profiles.id,
-        username: membership.profiles.username,
-        email: membership.profiles.email,
-        avatar_url: membership.profiles.avatar_url,
-        status: membership.profiles.status || 'offline',
-        role: membership.role || 'member',
-        joined_at: membership.joined_at
-      })) || []
-
-      setMembers(roomMembers)
-      setMemberCount(roomMembers.length)
-
-      // Set current user's role
-      const currentMember = roomMembers.find(member => member.id === currentUserId)
-      setCurrentUserRole(currentMember?.role || 'member')
-    } catch (error: any) {
-      console.error('Error loading room members:', error)
-      setError(`Failed to load room members: ${error.message}`)
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  // Set current user's role when members change
+  useEffect(() => {
+    const currentMember = members.find(member => member.id === currentUserId)
+    setCurrentUserRole(currentMember?.role || 'member')
+  }, [members, currentUserId])
 
   useEffect(() => {
     if (!room?.id) return
 
-    loadRoomMembers()
+    // The caching hook handles loading automatically
 
     // Set up real-time subscription for member changes
     const supabase = createClient()
@@ -117,7 +66,7 @@ export function RoomInfo({ room, currentUserId }: RoomInfoProps) {
         },
         () => {
           // Reload members when changes occur
-          loadRoomMembers()
+          refreshRoomInfo()
         }
       )
       .subscribe()
@@ -134,11 +83,7 @@ export function RoomInfo({ room, currentUserId }: RoomInfoProps) {
         },
         (payload) => {
           // Update member status if they're in current room
-          setMembers(prev => prev.map(member => 
-            member.id === payload.new.id 
-              ? { ...member, status: payload.new.status }
-              : member
-          ))
+          updateMemberStatus(payload.new.id, payload.new.status)
         }
       )
       .subscribe()
@@ -183,7 +128,7 @@ export function RoomInfo({ room, currentUserId }: RoomInfoProps) {
       if (error) throw error
       
       // Refresh member list
-      loadRoomMembers()
+      refreshRoomInfo()
     } catch (error: any) {
       console.error('Error kicking user:', error)
       setError(`Failed to kick user: ${error.message}`)
@@ -208,7 +153,7 @@ export function RoomInfo({ room, currentUserId }: RoomInfoProps) {
       if (error) throw error
       
       // Refresh member list
-      loadRoomMembers()
+      refreshRoomInfo()
     } catch (error: any) {
       console.error('Error promoting user:', error)
       setError(`Failed to promote user: ${error.message}`)
@@ -233,7 +178,7 @@ export function RoomInfo({ room, currentUserId }: RoomInfoProps) {
       if (error) throw error
       
       // Refresh member list
-      loadRoomMembers()
+      refreshRoomInfo()
     } catch (error: any) {
       console.error('Error demoting user:', error)
       setError(`Failed to demote user: ${error.message}`)

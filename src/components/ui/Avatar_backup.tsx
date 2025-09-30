@@ -38,6 +38,9 @@ const pixelSizeMap = {
   xl: 64
 }
 
+// Global map to track loading requests and prevent duplicates
+const loadingImageRequests = new Map<string, Promise<string | null>>()
+
 /**
  * Generate Gravatar URL from email using proper MD5
  */
@@ -127,60 +130,6 @@ function useCachedImage(userId: string | undefined, imageUrl: string | null | un
         // Remove from loading requests
         loadingImageRequests.delete(userId)
       }
-// Global map to track loading requests and prevent duplicates
-const loadingImageRequests = new Map<string, Promise<string | null>>()
-
-/**
- * Custom hook for cached image loading with deduplication
- */
-function useCachedImage(userId: string | undefined, imageUrl: string | null | undefined) {
-  const [cachedImageUrl, setCachedImageUrl] = useState<string | null>(null)
-  const [isLoadingCache, setIsLoadingCache] = useState(false)
-
-  useEffect(() => {
-    if (!userId || !imageUrl) {
-      setCachedImageUrl(null)
-      return
-    }
-
-    // Check if image is already cached
-    const cachedUrl = cacheSystem.getCachedProfileImageUrl(userId)
-    if (cachedUrl) {
-      setCachedImageUrl(cachedUrl)
-      return
-    }
-
-    // Check if this image is already being loaded to prevent duplicates
-    if (loadingImageRequests.has(userId)) {
-      // Wait for the existing request to complete
-      loadingImageRequests.get(userId)?.then((url) => {
-        if (url) {
-          setCachedImageUrl(url)
-        }
-      })
-      return
-    }
-
-    // Load and cache the image
-    const loadAndCacheImage = async (): Promise<string | null> => {
-      setIsLoadingCache(true)
-      try {
-        const response = await fetch(imageUrl)
-        if (response.ok) {
-          const blob = await response.blob()
-          await cacheSystem.cacheProfileImage(userId, imageUrl, blob)
-          
-          const newCachedUrl = cacheSystem.getCachedProfileImageUrl(userId)
-          setCachedImageUrl(newCachedUrl)
-          return newCachedUrl
-        }
-      } catch (error) {
-        console.error('Failed to cache profile image:', error)
-      } finally {
-        setIsLoadingCache(false)
-        // Remove from loading requests
-        loadingImageRequests.delete(userId)
-      }
       return null
     }
 
@@ -209,7 +158,7 @@ export function Avatar({
   const pixelSize = pixelSizeMap[size]
   
   // Use cached image when available
-  const { cachedImageUrl, isLoadingCache } = useCachedImage(userId, avatarUrl)
+  const { cachedImageUrl } = useCachedImage(userId, avatarUrl)
   
   // Reset error state when props change
   useEffect(() => {

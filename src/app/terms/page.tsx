@@ -62,7 +62,7 @@ export default function TermsOfServicePage() {
               </h2>
               <p className="text-gray-600 dark:text-gray-300 mb-4">
                 ChatApp is a real-time messaging platform that allows users to create chat rooms, 
-                send messages, and communicate with other users. The service is provided "as is" without warranties of any kind.
+                send messages, and communicate with other users. The service is provided &quot;as is&quot; without warranties of any kind.
               </p>
             </section>
 

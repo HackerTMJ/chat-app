@@ -57,9 +57,9 @@ function JoinRoomContent() {
       if (room) {
         setRoom(room)
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error joining room:', error)
-      setError(`Failed to join room: ${error.message}`)
+      setError(`Failed to join room: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsLoading(false)
     }
@@ -170,7 +170,7 @@ function JoinRoomContent() {
         <div className="mt-6 pt-6 border-t border-gray-700">
           <div className="text-center space-y-4">
             <p className="text-sm text-gray-400">
-              Don't have a room code?
+              Don&apos;t have a room code?
             </p>
             <Button
               onClick={handleCreateNewRoom}

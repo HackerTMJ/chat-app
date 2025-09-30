@@ -29,6 +29,7 @@ import { SettingsDashboard } from '@/components/ui/SettingsDashboard'
 import { soundManager } from '@/lib/sounds/SoundManager'
 import FriendsSidebar from '@/components/friends/FriendsSidebar'
 import FriendChat from '@/components/friends/FriendChat'
+import FriendDashboard from '@/components/friends/FriendDashboard'
 import type { FriendshipWithProfile, CoupleRoomWithDetails } from '@/types/friends'
 
 export default function ChatPage() {
@@ -55,10 +56,12 @@ export default function ChatPage() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false)
   
-  // Friend chat states
-  const [isFriendChatMode, setIsFriendChatMode] = useState(false)
+  // Chat mode state - 'room' | 'friend'
+  const [chatMode, setChatMode] = useState<'room' | 'friend'>('room')
   const [currentFriendship, setCurrentFriendship] = useState<FriendshipWithProfile | null>(null)
   const [currentCoupleRoom, setCurrentCoupleRoom] = useState<CoupleRoomWithDetails | null>(null)
+  const [previousRoom, setPreviousRoom] = useState<any>(null) // Store the room we were in before friend chat
+  const [showFriendDashboard, setShowFriendDashboard] = useState(false)
 
   const {
     currentRoom,
@@ -125,7 +128,7 @@ export default function ChatPage() {
       const targetRoom = rooms.find(room => room.id === roomId)
       if (targetRoom && currentRoom?.id !== roomId) {
         console.log('🔗 Navigating to room from notification:', targetRoom.name)
-        setCurrentRoom(targetRoom)
+        handleRoomSelect(targetRoom)
 
         // Clear URL parameters after navigation
         const newUrl = window.location.pathname
@@ -190,7 +193,7 @@ export default function ChatPage() {
         if (replyData.room_id && currentRoom?.id !== replyData.room_id) {
           const targetRoom = rooms.find(room => room.id === replyData.room_id)
           if (targetRoom) {
-            setCurrentRoom(targetRoom)
+            handleRoomSelect(targetRoom)
           }
         }
         
@@ -502,7 +505,7 @@ export default function ChatPage() {
       
       // Also update the store immediately for instant UI feedback
       const { updateMessage } = useChatStore.getState()
-      const updateData: any = { content: editingText }
+      const updateData: { content: string; edited_at?: string } = { content: editingText }
       // Only add edited_at if we know the column exists (successful DB update)
       if (!error) {
         updateData.edited_at = new Date().toISOString()
@@ -594,7 +597,7 @@ export default function ChatPage() {
       if (currentRoom?.id !== roomId) {
         const targetRoom = rooms.find(room => room.id === roomId)
         if (targetRoom) {
-          setCurrentRoom(targetRoom)
+          handleRoomSelect(targetRoom)
           // Wait a bit for the room to load and render
           await new Promise(resolve => setTimeout(resolve, 500))
         }
@@ -627,7 +630,11 @@ export default function ChatPage() {
 
   // Friend Chat Handlers
   const handleFriendChatSelect = (friendship: FriendshipWithProfile, coupleRoom?: CoupleRoomWithDetails) => {
-    setIsFriendChatMode(true)
+    // Store the current room before switching to friend chat
+    if (currentRoom) {
+      setPreviousRoom(currentRoom)
+    }
+    setChatMode('friend')
     setCurrentFriendship(friendship)
     setCurrentCoupleRoom(coupleRoom || null)
     setCurrentRoom(null) // Exit regular chat room
@@ -635,9 +642,33 @@ export default function ChatPage() {
   }
 
   const handleBackToRegularChat = () => {
-    setIsFriendChatMode(false)
+    setChatMode('room')
     setCurrentFriendship(null)
     setCurrentCoupleRoom(null)
+    
+    // Restore the previous room if available, otherwise select PUBLIC room or first available room
+    if (previousRoom) {
+      setCurrentRoom(previousRoom)
+    } else if (rooms.length > 0) {
+      const publicRoom = rooms.find((room: any) => room.code === 'PUBLIC')
+      const targetRoom = publicRoom || rooms[0]
+      setCurrentRoom(targetRoom)
+    }
+  }
+
+  const handleStartChatFromDashboard = (friendship: FriendshipWithProfile) => {
+    handleFriendChatSelect(friendship, null)
+    setShowFriendDashboard(false)
+  }
+
+  const handleRoomSelect = (room: any) => {
+    // Switch to room chat mode when selecting a regular room
+    setChatMode('room')
+    setCurrentFriendship(null)
+    setCurrentCoupleRoom(null)
+    setCurrentRoom(room)
+    setPreviousRoom(null) // Clear previous room since we're selecting a new one
+    setIsMobileSidebarOpen(false) // Close mobile sidebar on room selection
   }
 
   if (!user) {
@@ -685,6 +716,8 @@ export default function ChatPage() {
               <FriendsSidebar
                 currentUserId={user.id}
                 onFriendChatSelect={handleFriendChatSelect}
+                showFriendDashboard={showFriendDashboard}
+                onShowFriendDashboard={setShowFriendDashboard}
               />
             )}
             
@@ -758,7 +791,7 @@ export default function ChatPage() {
                   }`}
                 >
                   <button
-                    onClick={() => setCurrentRoom(room)}
+                    onClick={() => handleRoomSelect(room)}
                     className="flex-1 text-left"
                   >
                     <div className="font-semibold">{room.name}</div>
@@ -936,7 +969,7 @@ export default function ChatPage() {
         </div>
         
         {/* Main Content - Either Regular Chat or Friend Chat */}
-        {isFriendChatMode && currentFriendship ? (
+        {chatMode === 'friend' && currentFriendship ? (
           <div className="flex-1 min-h-0 flex flex-col">
             <FriendChat
               friendship={currentFriendship}
@@ -1187,6 +1220,16 @@ export default function ChatPage() {
 
       {/* Confirmation Dialog */}
       <ConfirmationComponent />
+
+      {/* Friend Dashboard */}
+      {user && (
+        <FriendDashboard
+          isOpen={showFriendDashboard}
+          onClose={() => setShowFriendDashboard(false)}
+          currentUserId={user.id}
+          onStartChat={handleStartChatFromDashboard}
+        />
+      )}
     </div>
   )
 }

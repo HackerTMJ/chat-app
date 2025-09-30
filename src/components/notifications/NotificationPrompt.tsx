@@ -44,7 +44,7 @@ export function NotificationPrompt() {
         // Show welcome notification
         await notificationManager.showNotification({
           title: 'Notifications Enabled! 🎉',
-          body: 'You\'ll receive notifications for new messages when the app is in the background.',
+          body: 'You&apos;ll receive notifications for new messages when the app is in the background.',
           tag: 'welcome-notification',
           icon: '/icon-192x192.png'
         })

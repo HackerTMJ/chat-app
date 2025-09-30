@@ -3,9 +3,9 @@
 // Migration script to add edited_at column to messages table
 // Run with: node scripts/migrate-edited-at.js
 
-const { createClient } = require('@supabase/supabase-js')
-const fs = require('fs')
-const path = require('path')
+import { createClient } from '@supabase/supabase-js'
+import fs from 'fs'
+import path from 'path'
 
 async function runMigration() {
   // You'll need to set these environment variables or update with your values
@@ -26,7 +26,7 @@ async function runMigration() {
   console.log('Running migration to add edited_at column...')
 
   try {
-    const { data, error } = await supabase.rpc('exec_sql', {
+    const { error } = await supabase.rpc('exec_sql', {
       sql: migrationSql
     })
 
