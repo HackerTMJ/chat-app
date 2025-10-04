@@ -773,6 +773,22 @@ export function useSendMessage() {
   const sendMessage = async (content: string, userId: string) => {
     if (!currentRoom || !content.trim()) return false
 
+    const supabase = createClient()
+
+    // Check if user is banned from this room BEFORE sending
+    const { data: bannedUser, error: banCheckError } = await supabase
+      .from('room_banned_users')
+      .select('id, reason')
+      .eq('room_id', currentRoom.id)
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (bannedUser) {
+      const reason = bannedUser.reason ? `: ${bannedUser.reason}` : ''
+      setError(`You cannot send messages. You are banned from this room${reason}`)
+      return false
+    }
+
     // Create an optimistic message so the UI updates immediately
     const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const optimisticMessage = {
@@ -904,13 +920,37 @@ export function useJoinRoom() {
       const room = rooms[0]
       console.log('✅ Room found:', room)
       
+      // Check if user is banned from this room FIRST (before anything else)
+      console.log('🔍 Checking if user is banned...')
+      const { data: bannedUser, error: banError } = await supabase
+        .from('room_banned_users')
+        .select('id, reason, banned_at, banned_by')
+        .eq('room_id', room.id)
+        .eq('user_id', userId)
+        .maybeSingle()
+      
+      if (banError) {
+        console.log('⚠️ Error checking ban status:', banError)
+      }
+      
+      if (bannedUser) {
+        console.log('🚫 User is BANNED from this room:', bannedUser)
+        const reason = bannedUser.reason ? ` Reason: ${bannedUser.reason}` : ''
+        const banMessage = `You are banned from this room!${reason}`
+        setError(banMessage)
+        alert(banMessage) // Show alert immediately
+        return null
+      }
+      
+      console.log('✅ User is NOT banned, can proceed')
+      
       // Check if user is already a member
       const { data: existingMembership } = await supabase
         .from('room_memberships')
         .select('id')
         .eq('room_id', room.id)
         .eq('user_id', userId)
-        .single()
+        .maybeSingle()
       
       if (existingMembership) {
         console.log('✅ User already a member, returning room')

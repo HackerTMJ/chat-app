@@ -382,15 +382,14 @@ export async function kickUserFromRoom(roomId: string, userId: string): Promise<
 }
 
 /**
- * Ban user from room
+ * Ban user from room (with trigger auto-kick)
  */
 export async function banUserFromRoom(data: BanUserData): Promise<void> {
   try {
-    // First, remove from room members
-    await kickUserFromRoom(data.room_id, data.user_id)
+    console.log('🚫 Banning user:', data)
 
-    // Then add to banned list
-    const { error } = await supabase
+    // Add to banned list (trigger will auto-kick)
+    const { data: bannedData, error } = await supabase
       .from('room_banned_users')
       .insert({
         room_id: data.room_id,
@@ -398,10 +397,23 @@ export async function banUserFromRoom(data: BanUserData): Promise<void> {
         banned_by: data.banned_by,
         reason: data.reason,
       })
+      .select()
+      .single()
 
-    if (error) throw error
-  } catch (error) {
+    if (error) {
+      console.error('❌ Ban error details:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      })
+      throw error
+    }
+
+    console.log('✅ User banned successfully:', bannedData)
+  } catch (error: any) {
     console.error('Error banning user from room:', error)
+    console.error('Full error object:', JSON.stringify(error, null, 2))
     throw error
   }
 }

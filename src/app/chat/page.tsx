@@ -122,6 +122,58 @@ export default function ChatPage() {
   // Real-time subscriptions
   useRealTimeMessages(currentRoom?.id || null)
 
+  // Real-time ban enforcement - kick user immediately when banned
+  useEffect(() => {
+    if (!user || !currentRoom?.id) return
+
+    console.log('🛡️ Setting up ban enforcement listener for room:', currentRoom.id)
+
+    const channel = supabase
+      .channel(`ban_enforcement:${currentRoom.id}:${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'room_banned_users',
+          filter: `room_id=eq.${currentRoom.id}`
+        },
+        async (payload) => {
+          console.log('🚫 Ban event detected:', payload)
+          
+          // Check if this user was banned
+          if (payload.new.user_id === user.id) {
+            console.log('⚠️ Current user has been banned from this room!')
+            
+            const reason = payload.new.reason ? `: ${payload.new.reason}` : ''
+            
+            // Show alert
+            alert(`You have been banned from this room${reason}`)
+            
+            // Clear current room and switch to another room
+            setCurrentRoom(null)
+            
+            // Find another room to switch to
+            const otherRooms = rooms.filter(r => r.id !== currentRoom.id)
+            if (otherRooms.length > 0) {
+              // Switch to PUBLIC room or first available room
+              const publicRoom = otherRooms.find(r => r.code === 'PUBLIC')
+              const targetRoom = publicRoom || otherRooms[0]
+              setTimeout(() => {
+                setCurrentRoom(targetRoom)
+              }, 1000)
+            }
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      console.log('🛡️ Cleaning up ban enforcement listener')
+      supabase.removeChannel(channel)
+    }
+  }, [currentRoom?.id, user, rooms, setCurrentRoom, supabase])
+
   // Load data on mount and when user changes
   useEffect(() => {
     if (user) {
@@ -432,6 +484,27 @@ export default function ChatPage() {
     e.preventDefault()
     if (!messageText.trim() || !currentRoom || !user) return
 
+    // Check if user is banned before sending message
+    const { data: bannedUser, error: banCheckError } = await supabase
+      .from('room_banned_users')
+      .select('id, reason')
+      .eq('room_id', currentRoom.id)
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (banCheckError) {
+      console.error('Error checking ban status:', banCheckError)
+    }
+
+    if (bannedUser) {
+      const reason = bannedUser.reason ? `: ${bannedUser.reason}` : ''
+      alert(`You cannot send messages. You are banned from this room${reason}`)
+      setMessageText('')
+      // Force leave the room
+      setCurrentRoom(null)
+      return
+    }
+
     // Stop typing indicator when sending message
     stopTyping()
 
@@ -676,7 +749,27 @@ export default function ChatPage() {
     setShowFriendDashboard(false)
   }
 
-  const handleRoomSelect = (room: any) => {
+  const handleRoomSelect = async (room: any) => {
+    if (!user) return
+
+    // Check if user is banned from this room
+    const { data: bannedUser, error: banCheckError } = await supabase
+      .from('room_banned_users')
+      .select('id, reason')
+      .eq('room_id', room.id)
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (banCheckError) {
+      console.error('Error checking ban status:', banCheckError)
+    }
+
+    if (bannedUser) {
+      const reason = bannedUser.reason ? `: ${bannedUser.reason}` : ''
+      alert(`You are banned from this room${reason}`)
+      return
+    }
+
     // Switch to room chat mode when selecting a regular room
     setChatMode('room')
     setCurrentFriendship(null)
@@ -705,9 +798,9 @@ export default function ChatPage() {
       }`} onClick={() => setIsMobileSidebarOpen(false)} />
       
       {/* Sidebar - Rooms */}
-      <div className={`w-72 sm:w-80 lg:w-72 chat-sidebar flex flex-col shadow-2xl rounded-r-3xl lg:rounded-none backdrop-blur-xl bg-gradient-to-b from-white/95 to-white/90 dark:from-gray-900/95 dark:to-gray-800/90 border-r border-gray-200/50 dark:border-gray-700/50 z-50 transition-all duration-500 ease-in-out lg:translate-x-0 ${
-        !isMobileSidebarOpen ? '-translate-x-full lg:translate-x-0 opacity-0 lg:opacity-100' : 'translate-x-0 opacity-100'
-      } fixed lg:relative h-full`}>
+      <div className={`w-72 sm:w-80 lg:w-72 chat-sidebar flex flex-col shadow-2xl rounded-r-3xl lg:rounded-none backdrop-blur-xl bg-gradient-to-b from-white/95 to-white/90 dark:from-gray-900/95 dark:to-gray-800/90 border-r border-gray-200/50 dark:border-gray-700/50 z-50 transition-all duration-500 ease-in-out fixed lg:relative h-full ${
+        !isMobileSidebarOpen ? '-translate-x-full lg:translate-x-0' : 'translate-x-0'
+      }`}>
         <div className="p-5 chat-header">
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg">

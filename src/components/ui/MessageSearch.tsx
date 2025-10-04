@@ -270,14 +270,18 @@ export function MessageSearch({ currentUser, currentRoom, onJumpToMessage }: Mes
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="card border rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/50 z-50 animate-fade-in" onClick={() => setIsOpen(false)}>
+      <div 
+        className="card border-l shadow-2xl w-full sm:max-w-2xl h-full ml-auto flex flex-col animate-slide-in-left overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
-        <div className="p-6 border-b border-primary">
+        <div className="p-4 sm:p-6 border-b border-primary bg-header flex-shrink-0">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-primary flex items-center gap-2">
-              <Search size={20} />
-              Search Messages
+            <h2 className="text-lg sm:text-xl font-semibold text-primary flex items-center gap-2">
+              <Search size={18} className="sm:w-5 sm:h-5" />
+              <span className="hidden sm:inline">Search Messages</span>
+              <span className="sm:hidden">Search</span>
             </h2>
             <Button
               onClick={() => setIsOpen(false)}
