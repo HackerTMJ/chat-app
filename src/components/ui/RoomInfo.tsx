@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Users, Hash, Calendar, Crown, Shield, User, ChevronDown, ChevronUp, UserMinus, UserPlus, UserCheck } from 'lucide-react'
+import { Users, Hash, Calendar, Crown, Shield, User, ChevronDown, ChevronUp, UserMinus, UserPlus, UserCheck, Settings } from 'lucide-react'
 import { StatusIndicator } from './StatusIndicator'
 import { Avatar } from './Avatar'
 import { useRoomInfoCache } from '@/lib/hooks/useCacheSystem'
@@ -17,6 +17,7 @@ interface RoomInfoProps {
     created_at: string
   }
   currentUserId: string
+  onOpenSettings?: () => void
 }
 
 const ROLE_ICONS = {
@@ -31,7 +32,7 @@ const ROLE_COLORS = {
   member: 'text-gray-500'
 }
 
-export function RoomInfo({ room, currentUserId }: RoomInfoProps) {
+export function RoomInfo({ room, currentUserId, onOpenSettings }: RoomInfoProps) {
   const [isExpanded, setIsExpanded] = useState(true)
   const [currentUserRole, setCurrentUserRole] = useState<string>('member')
   const [actionLoading, setActionLoading] = useState<string | null>(null)
@@ -272,21 +273,34 @@ export function RoomInfo({ room, currentUserId }: RoomInfoProps) {
   return (
     <div className="card border rounded-xl p-6">
       {/* Collapsible Header */}
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center justify-between w-full mb-4 hover:bg-primary/5 p-2 rounded-lg transition-colors"
-      >
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between w-full mb-4">
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="flex items-center gap-2 hover:bg-primary/5 p-2 rounded-lg transition-colors flex-1"
+        >
           <Users size={20} className="text-primary" />
           <h3 className="text-lg font-semibold text-primary">Room Information</h3>
           <span className="text-sm text-muted">({memberCount})</span>
-        </div>
-        {isExpanded ? (
-          <ChevronUp size={20} className="text-muted" />
-        ) : (
-          <ChevronDown size={20} className="text-muted" />
+          <div className="ml-auto">
+            {isExpanded ? (
+              <ChevronUp size={20} className="text-muted" />
+            ) : (
+              <ChevronDown size={20} className="text-muted" />
+            )}
+          </div>
+        </button>
+        
+        {/* Room Settings Button */}
+        {onOpenSettings && currentUserRole === 'owner' && (
+          <button
+            onClick={onOpenSettings}
+            className="p-2 rounded-lg hover:bg-blue-500/10 text-blue-500 hover:text-blue-600 transition-all duration-200 ml-2"
+            title="Room Settings"
+          >
+            <Settings size={18} />
+          </button>
         )}
-      </button>
+      </div>
 
       {isExpanded && (
         <>

@@ -32,6 +32,7 @@ import FriendsSidebar from '@/components/friends/FriendsSidebar'
 import FriendChat from '@/components/friends/FriendChat'
 import FriendDashboard from '@/components/friends/FriendDashboard'
 import FriendInfo from '@/components/friends/FriendInfo'
+import RoomSettings from '@/components/rooms/RoomSettings'
 import type { FriendshipWithProfile, CoupleRoomWithDetails } from '@/types/friends'
 
 export default function ChatPage() {
@@ -65,6 +66,7 @@ export default function ChatPage() {
   const [currentCoupleRoom, setCurrentCoupleRoom] = useState<CoupleRoomWithDetails | null>(null)
   const [previousRoom, setPreviousRoom] = useState<any>(null) // Store the room we were in before friend chat
   const [showFriendDashboard, setShowFriendDashboard] = useState(false)
+  const [showRoomSettings, setShowRoomSettings] = useState(false)
 
   const {
     currentRoom,
@@ -812,17 +814,30 @@ export default function ChatPage() {
                   } transform hover:scale-[1.01] cursor-pointer backdrop-blur-sm`}
                   onMouseEnter={() => prefetchRoomInfo(room.id)}
                 >
+                  {/* Room Avatar */}
+                  {room.avatar_url ? (
+                    <img
+                      src={room.avatar_url}
+                      alt={room.name}
+                      className="w-8 h-8 rounded-lg object-cover flex-shrink-0"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0">
+                      <Hash size={14} className="text-white" />
+                    </div>
+                  )}
+                  
                   <button
                     onClick={() => handleRoomSelect(room)}
-                    className="flex-1 text-left"
+                    className="flex-1 text-left min-w-0"
                   >
                     <div className="font-bold text-xs text-gray-800 dark:text-gray-100 flex items-center gap-1.5">
-                      <div className={`w-1 h-1 rounded-full ${
+                      <div className={`w-1 h-1 rounded-full flex-shrink-0 ${
                         chatMode === 'room' && currentRoom?.id === room.id
                           ? 'bg-blue-500 animate-pulse'
                           : 'bg-gray-400 dark:bg-gray-600'
                       }`}></div>
-                      {room.name}
+                      <span className="truncate">{room.name}</span>
                     </div>
                     <div className="text-[10px] flex items-center gap-1 text-gray-500 dark:text-gray-400 mt-0.5">
                       <Hash size={10} />
@@ -1250,7 +1265,11 @@ export default function ChatPage() {
                 }}
               />
             ) : currentRoom ? (
-              <RoomInfo room={currentRoom} currentUserId={user.id} />
+              <RoomInfo 
+                room={currentRoom} 
+                currentUserId={user.id}
+                onOpenSettings={() => setShowRoomSettings(true)}
+              />
             ) : null}
           </div>
         </div>
@@ -1272,6 +1291,24 @@ export default function ChatPage() {
           onClose={() => setShowFriendDashboard(false)}
           currentUserId={user.id}
           onStartChat={handleStartChatFromDashboard}
+        />
+      )}
+
+      {/* Room Settings */}
+      {showRoomSettings && currentRoom && user && (
+        <RoomSettings
+          room={currentRoom as any}
+          currentUserId={user.id}
+          userRole={currentRoom.created_by === user.id ? 'owner' : 'member'}
+          onClose={() => setShowRoomSettings(false)}
+          onUpdate={async () => {
+            // Reload rooms to reflect changes
+            await loadRooms
+            if (currentRoom) {
+              // Reload current room data
+              setCurrentRoom({ ...currentRoom })
+            }
+          }}
         />
       )}
     </div>
