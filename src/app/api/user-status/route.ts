@@ -3,7 +3,21 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    // Check if request has a body
+    const text = await request.text()
+    if (!text || text.trim() === '') {
+      return NextResponse.json({ error: 'Request body is empty' }, { status: 400 })
+    }
+
+    // Parse JSON safely
+    let body
+    try {
+      body = JSON.parse(text)
+    } catch (parseError) {
+      console.error('Error parsing JSON:', parseError)
+      return NextResponse.json({ error: 'Invalid JSON in request body' }, { status: 400 })
+    }
+
     const { user_id, status, last_seen } = body
 
     if (!user_id || !status) {

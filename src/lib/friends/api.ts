@@ -171,6 +171,74 @@ export async function acceptFriendRequestSimple(friendship_id: string): Promise<
   return await acceptFriendRequest({ friendship_id, accept: true })
 }
 
+// Block/Unblock Friend
+export async function blockFriend(friendship_id: string): Promise<FriendRequestResponse> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error('Not authenticated')
+
+    const { error } = await supabase
+      .from('friendships')
+      .update({ status: 'blocked' })
+      .eq('id', friendship_id)
+
+    if (error) throw error
+
+    return { success: true }
+  } catch (error) {
+    console.error('Error blocking friend:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to block friend'
+    }
+  }
+}
+
+export async function unblockFriend(friendship_id: string): Promise<FriendRequestResponse> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error('Not authenticated')
+
+    const { error } = await supabase
+      .from('friendships')
+      .update({ status: 'accepted' })
+      .eq('id', friendship_id)
+
+    if (error) throw error
+
+    return { success: true }
+  } catch (error) {
+    console.error('Error unblocking friend:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to unblock friend'
+    }
+  }
+}
+
+// Remove Friend
+export async function removeFriend(friendship_id: string): Promise<FriendRequestResponse> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error('Not authenticated')
+
+    const { error } = await supabase
+      .from('friendships')
+      .delete()
+      .eq('id', friendship_id)
+
+    if (error) throw error
+
+    return { success: true }
+  } catch (error) {
+    console.error('Error removing friend:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to remove friend'
+    }
+  }
+}
+
 // Friend Management Functions
 export async function getFriendships(): Promise<FriendshipWithProfile[]> {
   try {
@@ -181,11 +249,10 @@ export async function getFriendships(): Promise<FriendshipWithProfile[]> {
       .from('friendships')
       .select(`
         *,
-        user1_profile:profiles!friendships_user1_id_fkey(id, username, email, avatar_url),
-        user2_profile:profiles!friendships_user2_id_fkey(id, username, email, avatar_url)
+        user1_profile:profiles!friendships_user1_id_fkey(id, username, email, avatar_url, status, last_seen),
+        user2_profile:profiles!friendships_user2_id_fkey(id, username, email, avatar_url, status, last_seen)
       `)
       .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
-      .eq('status', 'accepted')
 
     if (error) throw error
 
@@ -340,6 +407,43 @@ export async function getCoupleMessages(roomId: string): Promise<CoupleMessage[]
   } catch (error) {
     console.error('Error fetching couple messages:', error)
     return []
+  }
+}
+
+export async function createOrGetCoupleRoom(friendshipId: string): Promise<CoupleRoom | null> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error('Not authenticated')
+
+    // Check if couple room already exists
+    const { data: existingRoom, error: fetchError } = await supabase
+      .from('couple_rooms')
+      .select('*')
+      .eq('friendship_id', friendshipId)
+      .single()
+
+    if (existingRoom) {
+      return existingRoom
+    }
+
+    // Create new couple room if it doesn't exist
+    const { data: newRoom, error: createError } = await supabase
+      .from('couple_rooms')
+      .insert({
+        friendship_id: friendshipId,
+        room_theme: 'default'
+      })
+      .select()
+      .single()
+
+    if (createError) throw createError
+
+    console.log('✅ Created new couple room:', newRoom)
+    return newRoom
+
+  } catch (error) {
+    console.error('Error creating/getting couple room:', error)
+    return null
   }
 }
 

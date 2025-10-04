@@ -30,11 +30,18 @@ export const metadata: Metadata = {
       { url: "/icon-192x192.png", sizes: "192x192", type: "image/png" }
     ],
     apple: [
+      { url: "/icon-192x192.png", sizes: "192x192", type: "image/png" },
       { url: "/icon-192x192.png", sizes: "180x180", type: "image/png" },
       { url: "/icon-192x192.png", sizes: "152x152", type: "image/png" },
       { url: "/icon-192x192.png", sizes: "120x120", type: "image/png" }
     ],
     shortcut: "/icon-192x192.png",
+    other: [
+      {
+        rel: "apple-touch-icon",
+        url: "/icon-192x192.png"
+      }
+    ],
   },
   other: {
     'theme-color': '#667eea',
@@ -50,6 +57,7 @@ export default function RootLayout({
     <html lang="en">
       <head>
         <link rel="manifest" href="/manifest.json" />
+        <link rel="apple-touch-icon" href="/icon-192x192.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content="Chat App" />

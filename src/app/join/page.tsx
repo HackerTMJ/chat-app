@@ -85,43 +85,61 @@ function JoinRoomContent() {
   }
   
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 to-gray-800">
-      <div className="bg-gray-800 border border-gray-700 p-8 rounded-xl shadow-lg max-w-md w-full mx-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 dark:from-gray-900 dark:via-blue-900 dark:to-purple-900 relative overflow-hidden">
+      {/* Animated background blobs */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-300/20 dark:bg-blue-400/20 rounded-full blur-3xl animate-blob"></div>
+        <div className="absolute top-0 right-1/4 w-96 h-96 bg-purple-300/20 dark:bg-purple-400/20 rounded-full blur-3xl animate-blob animation-delay-2000"></div>
+        <div className="absolute -bottom-32 left-1/2 w-96 h-96 bg-pink-300/20 dark:bg-pink-400/20 rounded-full blur-3xl animate-blob animation-delay-4000"></div>
+      </div>
+      
+      <div className="relative backdrop-blur-2xl bg-white/80 dark:bg-gray-900/70 border border-white/30 dark:border-white/10 p-10 rounded-3xl shadow-2xl max-w-md w-full mx-4 transform hover:scale-[1.01] transition-all duration-300">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-100 mb-2 flex items-center justify-center gap-2">
-            <Link2 size={28} className="text-blue-400" />
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl shadow-lg mb-4 transform hover:rotate-12 transition-transform duration-300">
+            <Link2 size={32} className="text-white" />
+          </div>
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 dark:from-blue-400 dark:via-purple-400 dark:to-pink-400 bg-clip-text text-transparent mb-3">
             Join Room
           </h1>
-          <p className="text-gray-400">
-            Enter a room code to join the conversation
+          <p className="text-gray-700 dark:text-gray-300 text-sm">
+            Enter a room code to join the conversation 🎉
           </p>
         </div>
         
         {/* Error Display */}
         {error && (
-          <div className="mb-4 p-3 bg-red-900/50 border border-red-700 text-red-300 rounded">
-            {error}
+          <div className="mb-6 p-4 backdrop-blur-xl bg-red-500/10 dark:bg-red-500/20 border border-red-400/30 text-red-700 dark:text-red-300 rounded-2xl shadow-lg animate-shake">
+            <span className="font-medium">⚠️ {error}</span>
           </div>
         )}
         
         {/* Room Found Success */}
         {room && (
-          <div className="mb-6 p-4 bg-green-900/50 border border-green-700 rounded">
-            <h3 className="font-semibold text-green-400 mb-2 flex items-center gap-2">
-              <PartyPopper size={18} />
+          <div className="mb-6 p-5 backdrop-blur-xl bg-green-500/10 dark:bg-green-500/20 border border-green-400/30 rounded-2xl shadow-lg">
+            <h3 className="font-bold text-green-700 dark:text-green-300 mb-3 flex items-center gap-2 text-lg">
+              <PartyPopper size={20} />
               Room Found!
             </h3>
-            <div className="text-green-800">
-              <p><strong>Name:</strong> {room.name}</p>
-              <p><strong>Code:</strong> {room.code}</p>
-              <p><strong>Created:</strong> {new Date(room.created_at).toLocaleDateString()}</p>
+            <div className="text-white/90 space-y-2">
+              <p className="flex items-center gap-2">
+                <span className="font-semibold">Name:</span>
+                <span className="px-3 py-1 bg-white/10 rounded-lg">{room.name}</span>
+              </p>
+              <p className="flex items-center gap-2">
+                <span className="font-semibold">Code:</span>
+                <span className="px-3 py-1 bg-white/10 rounded-lg font-mono">{room.code}</span>
+              </p>
+              <p className="flex items-center gap-2">
+                <span className="font-semibold">Created:</span>
+                <span className="px-3 py-1 bg-white/10 rounded-lg">{new Date(room.created_at).toLocaleDateString()}</span>
+              </p>
             </div>
-            <div className="mt-4 flex gap-2">
+            <div className="mt-5 flex gap-3">
               <Button
                 onClick={handleEnterRoom}
-                className="flex-1"
+                className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-3 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-[1.02] transition-all duration-300"
               >
-                Enter Room
+                Enter Room →
               </Button>
               <Button
                 onClick={() => {
@@ -129,7 +147,7 @@ function JoinRoomContent() {
                   setRoomCode('')
                 }}
                 variant="outline"
-                className="flex-1"
+                className="flex-1 backdrop-blur-xl bg-white/10 hover:bg-white/20 border-white/30 text-white font-semibold py-3 rounded-xl transition-all duration-300"
               >
                 Try Another
               </Button>

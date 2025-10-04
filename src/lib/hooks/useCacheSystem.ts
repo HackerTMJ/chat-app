@@ -268,7 +268,7 @@ export function useUserCache() {
   }
 }
 
-// Room Info Cache Hook
+// Room Info Cache Hook with optimized loading
 export function useRoomInfoCache(roomId: string | null) {
   const [roomInfo, setRoomInfo] = useState<RoomInfo | null>(null)
   const [members, setMembers] = useState<RoomMember[]>([])
@@ -277,7 +277,7 @@ export function useRoomInfoCache(roomId: string | null) {
   
   const { cacheRoomInfo, getCachedRoomInfo, getCachedRoomMembers, updateRoomMemberStatus } = useCacheSystem()
 
-  const loadRoomInfo = useCallback(async () => {
+  const loadRoomInfo = useCallback(async (fromNetwork: boolean = false) => {
     if (!roomId) {
       setRoomInfo(null)
       setMembers([])
@@ -285,20 +285,35 @@ export function useRoomInfoCache(roomId: string | null) {
       return
     }
 
-    setLoading(true)
     setError(null)
     
     try {
-      // Try to load from cache first
+      // OPTIMIZATION: Check cache synchronously first
       const cachedRoomInfo = await getCachedRoomInfo(roomId)
-      if (cachedRoomInfo) {
-        console.log(`✅ Loaded room info from cache: ${cachedRoomInfo.room.name}`)
+      
+      if (cachedRoomInfo && !fromNetwork) {
+        // Immediately show cached data (no loading state!)
+        console.log(`⚡ Instantly loaded room info from cache: ${cachedRoomInfo.room.name}`)
         setRoomInfo(cachedRoomInfo)
         setMembers(cachedRoomInfo.members)
         setLoading(false)
+        
+        // Optional: Fetch fresh data in background if cache is old (stale-while-revalidate)
+        const cacheAge = Date.now() - new Date(cachedRoomInfo.lastUpdated).getTime()
+        if (cacheAge > 60000) { // If cache is older than 1 minute
+          console.log(`� Cache is old, refreshing in background...`)
+          fetchRoomInfoFromNetwork(roomId).then(async networkRoomInfo => {
+            if (networkRoomInfo) {
+              await cacheRoomInfo(networkRoomInfo, true)
+              setRoomInfo(networkRoomInfo)
+              setMembers(networkRoomInfo.members)
+            }
+          }).catch(err => console.error('Background refresh failed:', err))
+        }
       } else {
-        // If no cached room info, fetch from network
-        console.log(`📡 No cached room info for room ${roomId}, fetching from server...`)
+        // No cache or force network - show loading
+        setLoading(true)
+        console.log(`📡 Fetching room info from server...`)
         const networkRoomInfo = await fetchRoomInfoFromNetwork(roomId)
         if (networkRoomInfo) {
           await cacheRoomInfo(networkRoomInfo, true)
@@ -364,8 +379,111 @@ async function fetchUserFromNetwork(userId: string): Promise<User | null> {
   return null
 }
 
-// Mock function - would be replaced with actual Supabase call
+// Actual Supabase query for room info and members
 async function fetchRoomInfoFromNetwork(roomId: string): Promise<RoomInfo | null> {
-  // This would be replaced with actual Supabase query
-  return null
+  try {
+    const { createClient } = await import('@/lib/supabase/client')
+    const supabase = createClient()
+    
+    // Get room info
+    const { data: room, error: roomError } = await supabase
+      .from('rooms')
+      .select('*')
+      .eq('id', roomId)
+      .single()
+    
+    if (roomError || !room) {
+      console.error('Error fetching room:', roomError)
+      return null
+    }
+    
+    // First, check if room_memberships table exists, if not use messages table
+    let members: RoomMember[] = []
+    
+    // Try to get from room_memberships first
+    const { data: memberships, error: membersError } = await supabase
+      .from('room_memberships')
+      .select('user_id, role, joined_at')
+      .eq('room_id', roomId)
+    
+    if (membersError) {
+      console.log('room_memberships table not found, using messages table:', membersError)
+      
+      // Fallback: get unique users from messages in this room
+      const { data: messageUsers, error: msgError } = await supabase
+        .from('messages')
+        .select(`
+          user_id,
+          profiles!inner (
+            id,
+            username,
+            avatar_url,
+            status,
+            last_seen
+          )
+        `)
+        .eq('room_id', roomId)
+        .order('created_at', { ascending: false })
+      
+      if (!msgError && messageUsers) {
+        // Get unique users
+        const uniqueUsers = new Map()
+        messageUsers.forEach((msg: any) => {
+          if (msg.profiles && !uniqueUsers.has(msg.user_id)) {
+            uniqueUsers.set(msg.user_id, {
+              id: msg.profiles.id,
+              username: msg.profiles.username || 'Unknown User',
+              avatar_url: msg.profiles.avatar_url,
+              status: msg.profiles.status || 'offline',
+              last_seen: msg.profiles.last_seen || new Date().toISOString(),
+              role: msg.user_id === room.created_by ? 'owner' : 'member',
+              joined_at: new Date().toISOString()
+            })
+          }
+        })
+        members = Array.from(uniqueUsers.values())
+      }
+    } else if (memberships && memberships.length > 0) {
+      // Get profile data for each member
+      const userIds = memberships.map(m => m.user_id)
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, username, avatar_url, status, last_seen')
+        .in('id', userIds)
+      
+      members = memberships.map((membership: any) => {
+        const profile = profiles?.find(p => p.id === membership.user_id)
+        return {
+          id: membership.user_id,
+          username: profile?.username || 'Unknown User',
+          email: '',
+          avatar_url: profile?.avatar_url,
+          status: profile?.status || 'offline',
+          last_seen: profile?.last_seen || new Date().toISOString(),
+          role: membership.role || 'member',
+          joined_at: membership.joined_at || new Date().toISOString()
+        }
+      })
+    }
+    
+    const roomInfo: RoomInfo = {
+      room: {
+        id: room.id,
+        name: room.name,
+        code: room.code,
+        created_by: room.created_by,
+        created_at: room.created_at,
+        updated_at: room.updated_at || room.created_at
+      },
+      members,
+      memberCount: members.length,
+      lastUpdated: new Date().toISOString()
+    }
+    
+    console.log(`📡 Fetched room info from network: ${room.name} (${members.length} members)`)
+    return roomInfo
+  } catch (error) {
+    console.error('Error in fetchRoomInfoFromNetwork:', error)
+    return null
+  }
 }

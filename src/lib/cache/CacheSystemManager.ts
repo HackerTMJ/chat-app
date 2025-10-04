@@ -21,13 +21,50 @@ interface CoupleMessage {
   room_id: string
   sender_id: string
   content: string
-  message_type: 'text' | 'image' | 'file'
+  message_type: 'text' | 'heart' | 'anniversary' | 'note'
   is_private_note: boolean
   created_at: string
+  edited_at?: string
   sender_profile?: {
     username: string
     avatar_url?: string | null
   }
+}
+
+interface Friendship {
+  id: string
+  user1_id: string
+  user2_id: string
+  status: 'pending' | 'accepted' | 'blocked' | 'cancelled'
+  relationship_type: 'friend' | 'couple' | 'bestfriend'
+  initiated_by: string
+  created_at: string
+  accepted_at?: string
+  updated_at: string
+}
+
+interface FriendProfile {
+  id: string
+  username: string
+  full_name: string
+  email: string
+  avatar_url?: string
+  status: 'online' | 'away' | 'offline'
+  last_seen: string
+}
+
+interface FriendshipWithProfile extends Friendship {
+  friend_profile: FriendProfile
+}
+
+interface FriendRequest {
+  id: string
+  requester_id: string
+  recipient_id: string
+  status: 'pending' | 'accepted' | 'declined'
+  created_at: string
+  requester_profile?: FriendProfile
+  recipient_profile?: FriendProfile
 }
 
 interface User {
@@ -74,6 +111,8 @@ interface CacheStats {
   cacheHits: number
   cacheMisses: number
   profileImagesCount: number
+  friendshipsCount: number
+  friendRequestsCount: number
 }
 
 interface CompressionOptions {
@@ -106,6 +145,12 @@ class CacheSystemManager {
   private compressionCache: Map<string, string> = new Map()
   private profileImages: Map<string, string> = new Map() // Cache for profile image URLs/data
   private profileImageMetadata: Map<string, { url: string; cachedAt: number; size: number; type: string }> = new Map()
+  // Friend system caches
+  private friendships: Map<string, FriendshipWithProfile> = new Map()
+  private friendshipsByUser: Map<string, string[]> = new Map()
+  private friendRequests: Map<string, FriendRequest> = new Map()
+  private friendRequestsByUser: Map<string, string[]> = new Map()
+  private friendProfiles: Map<string, FriendProfile> = new Map()
   private stats: CacheStats
   private options: CacheOptions
   private listeners: Set<() => void> = new Set()
@@ -136,7 +181,9 @@ class CacheSystemManager {
       lastSync: new Date().toISOString(),
       cacheHits: 0,
       cacheMisses: 0,
-      profileImagesCount: 0
+      profileImagesCount: 0,
+      friendshipsCount: 0,
+      friendRequestsCount: 0
     }
 
     // Initialize with some baseline cache activity for a realistic starting hit rate
@@ -828,6 +875,8 @@ class CacheSystemManager {
       usersCount: totalUsers,
       roomsCount: totalRooms,
       profileImagesCount: this.profileImages.size,
+      friendshipsCount: this.friendships.size,
+      friendRequestsCount: this.friendRequests.size,
       totalSize: this.calculateTotalSize(),
       hitRate: this.calculateHitRate(),
       bandwidthSaved: this.stats.bandwidthSaved,
@@ -1218,6 +1267,176 @@ class CacheSystemManager {
       reader.readAsDataURL(blob)
     })
   }
+
+  // Friend System Cache Methods
+  async cacheFriendship(friendship: FriendshipWithProfile, currentUserId: string): Promise<void> {
+    const key = `${currentUserId}:${friendship.id}`
+    this.friendships.set(key, friendship)
+    
+    // Index by user
+    if (!this.friendshipsByUser.has(currentUserId)) {
+      this.friendshipsByUser.set(currentUserId, [])
+    }
+    const userFriendships = this.friendshipsByUser.get(currentUserId)!
+    if (!userFriendships.includes(key)) {
+      userFriendships.push(key)
+    }
+    
+    // Cache friend profile
+    if (friendship.friend_profile) {
+      const friendId = friendship.user1_id === currentUserId ? friendship.user2_id : friendship.user1_id
+      this.friendProfiles.set(friendId, friendship.friend_profile)
+    }
+    
+    this.updateStats()
+    this.notifyListeners()
+  }
+
+  async getFriendships(userId: string): Promise<FriendshipWithProfile[]> {
+    const friendshipKeys = this.friendshipsByUser.get(userId) || []
+    const friendships: FriendshipWithProfile[] = []
+    
+    for (const key of friendshipKeys) {
+      const friendship = this.friendships.get(key)
+      if (friendship) {
+        friendships.push(friendship)
+        this.stats.cacheHits++
+      }
+    }
+    
+    if (friendships.length === 0) {
+      this.stats.cacheMisses++
+    }
+    
+    this.updateStats()
+    return friendships
+  }
+
+  async cacheFriendRequest(request: FriendRequest): Promise<void> {
+    const key = `${request.requester_id}:${request.recipient_id}:${request.id}`
+    this.friendRequests.set(key, request)
+    
+    // Index by requester
+    if (!this.friendRequestsByUser.has(request.requester_id)) {
+      this.friendRequestsByUser.set(request.requester_id, [])
+    }
+    const requesterRequests = this.friendRequestsByUser.get(request.requester_id)!
+    if (!requesterRequests.includes(key)) {
+      requesterRequests.push(key)
+    }
+    
+    // Index by recipient
+    if (!this.friendRequestsByUser.has(request.recipient_id)) {
+      this.friendRequestsByUser.set(request.recipient_id, [])
+    }
+    const recipientRequests = this.friendRequestsByUser.get(request.recipient_id)!
+    if (!recipientRequests.includes(key)) {
+      recipientRequests.push(key)
+    }
+    
+    this.updateStats()
+    this.notifyListeners()
+  }
+
+  async getFriendRequests(userId: string, type: 'sent' | 'received' | 'all' = 'all'): Promise<FriendRequest[]> {
+    const requestKeys = this.friendRequestsByUser.get(userId) || []
+    const requests: FriendRequest[] = []
+    
+    for (const key of requestKeys) {
+      const request = this.friendRequests.get(key)
+      if (request) {
+        if (type === 'sent' && request.requester_id === userId) {
+          requests.push(request)
+        } else if (type === 'received' && request.recipient_id === userId) {
+          requests.push(request)
+        } else if (type === 'all') {
+          requests.push(request)
+        }
+        this.stats.cacheHits++
+      }
+    }
+    
+    if (requests.length === 0) {
+      this.stats.cacheMisses++
+    }
+    
+    this.updateStats()
+    return requests
+  }
+
+  async removeFriendship(userId: string, friendshipId: string): Promise<void> {
+    const key = `${userId}:${friendshipId}`
+    this.friendships.delete(key)
+    
+    // Remove from index
+    const userFriendships = this.friendshipsByUser.get(userId)
+    if (userFriendships) {
+      const index = userFriendships.indexOf(key)
+      if (index > -1) {
+        userFriendships.splice(index, 1)
+      }
+    }
+    
+    this.updateStats()
+    this.notifyListeners()
+  }
+
+  async removeFriendRequest(requestId: string): Promise<void> {
+    // Find and remove the request
+    for (const [key, request] of this.friendRequests.entries()) {
+      if (request.id === requestId) {
+        this.friendRequests.delete(key)
+        
+        // Remove from indexes
+        const requesterRequests = this.friendRequestsByUser.get(request.requester_id)
+        if (requesterRequests) {
+          const index = requesterRequests.indexOf(key)
+          if (index > -1) requesterRequests.splice(index, 1)
+        }
+        
+        const recipientRequests = this.friendRequestsByUser.get(request.recipient_id)
+        if (recipientRequests) {
+          const index = recipientRequests.indexOf(key)
+          if (index > -1) recipientRequests.splice(index, 1)
+        }
+        
+        break
+      }
+    }
+    
+    this.updateStats()
+    this.notifyListeners()
+  }
+
+  async getFriendProfile(friendId: string): Promise<FriendProfile | null> {
+    const profile = this.friendProfiles.get(friendId)
+    if (profile) {
+      this.stats.cacheHits++
+    } else {
+      this.stats.cacheMisses++
+    }
+    this.updateStats()
+    return profile || null
+  }
+
+  async invalidateFriendCache(userId: string): Promise<void> {
+    // Clear all friendships for user
+    const friendshipKeys = this.friendshipsByUser.get(userId) || []
+    for (const key of friendshipKeys) {
+      this.friendships.delete(key)
+    }
+    this.friendshipsByUser.delete(userId)
+    
+    // Clear all friend requests for user
+    const requestKeys = this.friendRequestsByUser.get(userId) || []
+    for (const key of requestKeys) {
+      this.friendRequests.delete(key)
+    }
+    this.friendRequestsByUser.delete(userId)
+    
+    this.updateStats()
+    this.notifyListeners()
+  }
 }
 
 // Global cache instance
@@ -1235,5 +1454,5 @@ export const cacheSystem = new CacheSystemManager({
   enablePrefetch: true
 })
 
-export type { Message, CoupleMessage, User, Room, RoomMember, RoomInfo, CacheStats, CacheOptions }
+export type { Message, CoupleMessage, User, Room, RoomMember, RoomInfo, CacheStats, CacheOptions, Friendship, FriendProfile, FriendshipWithProfile, FriendRequest }
 export { CacheSystemManager }

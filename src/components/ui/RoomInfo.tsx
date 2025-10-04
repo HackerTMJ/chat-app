@@ -35,6 +35,7 @@ export function RoomInfo({ room, currentUserId }: RoomInfoProps) {
   const [isExpanded, setIsExpanded] = useState(true)
   const [currentUserRole, setCurrentUserRole] = useState<string>('member')
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [errorMessage, setError] = useState<string | null>(null)
   
   // Use the caching hook
   const { roomInfo, members, loading: isLoading, error, updateMemberStatus, refreshRoomInfo } = useRoomInfoCache(room.id)
@@ -50,10 +51,20 @@ export function RoomInfo({ room, currentUserId }: RoomInfoProps) {
   useEffect(() => {
     if (!room?.id) return
 
-    // The caching hook handles loading automatically
-
     // Set up real-time subscription for member changes
     const supabase = createClient()
+    
+    // Debounce refresh to avoid multiple rapid reloads
+    let refreshTimeout: NodeJS.Timeout | null = null
+    
+    const debouncedRefresh = () => {
+      if (refreshTimeout) clearTimeout(refreshTimeout)
+      refreshTimeout = setTimeout(() => {
+        console.log('🔄 Debounced refresh triggered')
+        refreshRoomInfo()
+      }, 500) // Wait 500ms before refreshing
+    }
+    
     const channel = supabase
       .channel(`room_memberships:${room.id}`)
       .on(
@@ -64,14 +75,15 @@ export function RoomInfo({ room, currentUserId }: RoomInfoProps) {
           table: 'room_memberships',
           filter: `room_id=eq.${room.id}`
         },
-        () => {
-          // Reload members when changes occur
-          refreshRoomInfo()
+        (payload) => {
+          console.log('👥 Room membership change detected')
+          // Use debounced refresh to avoid rapid consecutive updates
+          debouncedRefresh()
         }
       )
       .subscribe()
 
-    // Also listen to profile changes (status updates)
+    // Also listen to profile changes (status updates) - but only update status, don't reload
     const profileChannel = supabase
       .channel(`profiles:status`)
       .on(
@@ -82,17 +94,22 @@ export function RoomInfo({ room, currentUserId }: RoomInfoProps) {
           table: 'profiles'
         },
         (payload) => {
-          // Update member status if they're in current room
-          updateMemberStatus(payload.new.id, payload.new.status)
+          // Only update status - no need to refresh entire room info
+          const isMemberInRoom = members.some(m => m.id === payload.new.id)
+          if (isMemberInRoom) {
+            console.log(`📊 Status update for member: ${payload.new.id}`)
+            updateMemberStatus(payload.new.id, payload.new.status)
+          }
         }
       )
       .subscribe()
 
     return () => {
+      if (refreshTimeout) clearTimeout(refreshTimeout)
       supabase.removeChannel(channel)
       supabase.removeChannel(profileChannel)
     }
-  }, [room?.id, currentUserId])
+  }, [room?.id, members, refreshRoomInfo, updateMemberStatus])
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {

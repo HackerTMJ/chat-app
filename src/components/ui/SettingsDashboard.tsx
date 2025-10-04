@@ -41,19 +41,19 @@ export function SettingsDashboard({ isOpen, onClose }: SettingsDashboardProps) {
   ]
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-4xl h-[80vh] flex overflow-hidden">
+    <div className="fixed inset-0 bg-black/20 dark:bg-black/50 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+      <div className="bg-white/70 dark:bg-gray-900/70 backdrop-blur-2xl rounded-3xl shadow-2xl border border-white/20 dark:border-white/10 w-full max-w-4xl h-[80vh] flex overflow-hidden animate-in zoom-in-95 duration-300">
         {/* Sidebar Navigation */}
-        <div className="w-64 bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex flex-col">
+        <div className="w-64 bg-gray-50/50 dark:bg-gray-800/50 backdrop-blur-xl border-r border-white/20 dark:border-white/10 flex flex-col">
           {/* Header */}
-          <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Settings</h2>
+          <div className="p-6 border-b border-white/20 dark:border-white/10 flex items-center justify-between">
+            <h2 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">Settings</h2>
             <button
               onClick={onClose}
-              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors"
+              className="p-2 hover:bg-white/50 dark:hover:bg-gray-700/50 rounded-full transition-all duration-200 hover:scale-110"
               aria-label="Close settings"
             >
-              <X size={20} className="text-gray-500 dark:text-gray-400" />
+              <X size={20} className="text-gray-600 dark:text-gray-400" />
             </button>
           </div>
 
@@ -66,10 +66,10 @@ export function SettingsDashboard({ isOpen, onClose }: SettingsDashboardProps) {
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`w-full flex items-start gap-3 p-3 rounded-lg text-left transition-colors ${
+                    className={`w-full flex items-start gap-3 p-3 rounded-2xl text-left transition-all duration-200 ${
                       activeTab === tab.id
-                        ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700'
-                        : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'
+                        ? 'bg-gradient-to-r from-blue-500/20 to-purple-500/20 dark:from-blue-500/30 dark:to-purple-500/30 text-blue-700 dark:text-blue-300 border border-blue-300/50 dark:border-blue-500/50 shadow-lg shadow-blue-500/20 scale-105'
+                        : 'hover:bg-white/50 dark:hover:bg-gray-800/50 text-gray-700 dark:text-gray-300 hover:scale-102'
                     }`}
                   >
                     <Icon size={20} className="mt-0.5 flex-shrink-0" />
@@ -86,8 +86,8 @@ export function SettingsDashboard({ isOpen, onClose }: SettingsDashboardProps) {
           </nav>
 
           {/* User Info */}
-          <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-            <div className="flex items-center gap-3">
+          <div className="p-4 border-t border-white/20 dark:border-gray-700/30 bg-white/30 dark:bg-gray-800/30">
+            <div className="flex items-center gap-3 p-2 rounded-2xl bg-white/40 dark:bg-gray-900/40 backdrop-blur-sm">
               <Avatar
                 email={user?.email}
                 avatarUrl={user?.user_metadata?.avatar_url}
@@ -110,7 +110,7 @@ export function SettingsDashboard({ isOpen, onClose }: SettingsDashboardProps) {
         {/* Main Content Area */}
         <div className="flex-1 flex flex-col">
           {/* Content Header */}
-          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+          <div className="p-6 border-b border-white/20 dark:border-gray-700/30 bg-gradient-to-r from-blue-50/50 to-purple-50/50 dark:from-blue-900/20 dark:to-purple-900/20">
             <div className="flex items-center gap-3">
               {(() => {
                 const activeTabConfig = tabs.find(tab => tab.id === activeTab)
@@ -185,8 +185,9 @@ function ProfileSettings({ user }: { user: any }) {
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-3 border border-gray-200/50 dark:border-gray-600/50 rounded-2xl focus:ring-2 focus:ring-blue-500/50 focus:border-blue-400 bg-white/80 dark:bg-gray-700/80 backdrop-blur-sm text-gray-900 dark:text-white transition-all duration-200 hover:bg-white dark:hover:bg-gray-700 shadow-sm hover:shadow-md"
               placeholder="Enter your username"
+              aria-label="Username"
             />
           </div>
           <div className="space-y-2">
@@ -197,7 +198,8 @@ function ProfileSettings({ user }: { user: any }) {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-3 border border-gray-200/50 dark:border-gray-600/50 rounded-2xl focus:ring-2 focus:ring-blue-500/50 focus:border-blue-400 bg-white/80 dark:bg-gray-700/80 backdrop-blur-sm text-gray-900 dark:text-white transition-all duration-200 hover:bg-white dark:hover:bg-gray-700 shadow-sm hover:shadow-md"
+              aria-label="Email Address"
               placeholder="Enter your email"
             />
           </div>

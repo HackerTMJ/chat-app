@@ -7,6 +7,9 @@ import { CoupleRoom, CoupleMessage, RelationshipStatus } from '@/types/friends'
 import { useCoupleMessageCache } from '@/lib/hooks/useCoupleMessageCache'
 import { subscribeToCoupleRoom } from '@/lib/friends/api'
 import Avatar from '@/components/ui/Avatar'
+import { showMessageNotification } from '@/lib/notifications/NotificationManager'
+import { soundManager } from '@/lib/sounds/SoundManager'
+import { createClient } from '@/lib/supabase/client'
 
 interface CoupleChatProps {
   room: CoupleRoom
@@ -19,9 +22,13 @@ interface CoupleChatProps {
   relationshipStatus: RelationshipStatus
 }
 
-interface MessageWithHearts extends CoupleMessage {
+interface MessageWithHearts extends Omit<CoupleMessage, 'sender_profile'> {
   heart_reactions?: number
   user_hearted?: boolean
+  sender_profile?: {
+    username: string
+    avatar_url?: string | null
+  }
 }
 
 export default function CoupleChat({ 
@@ -66,17 +73,48 @@ export default function CoupleChat({
     })))
   }, [cachedMessages])
 
-  // Subscribe to real-time updates
+  // Subscribe to real-time updates with notifications
   useEffect(() => {
-    const unsubscribe = subscribeToCoupleRoom(room.id, (message) => {
-      addMessage(message)
-      scrollToBottom()
-    })
+    const supabase = createClient()
+    
+    const channel = supabase
+      .channel(`couple_room:${room.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'couple_messages',
+          filter: `room_id=eq.${room.id}`
+        },
+        (payload) => {
+          const newMessage = payload.new as CoupleMessage
+          
+          // Don't notify for own messages
+          if (newMessage.sender_id !== currentUserId) {
+            // Play sound
+            soundManager.playMessageSound({ isOwnMessage: false })
+            
+            // Show notification (NotificationManager will check if app is focused)
+            showMessageNotification({
+              sender_name: partnerProfile.full_name,
+              content: newMessage.content,
+              room_name: 'Couple Chat',
+              message_id: newMessage.id
+            })
+          }
+          
+          // Add to local state
+          addMessage(newMessage)
+          scrollToBottom()
+        }
+      )
+      .subscribe()
     
     return () => {
-      unsubscribe?.unsubscribe()
+      channel.unsubscribe()
     }
-  }, [room.id, addMessage])
+  }, [room.id, currentUserId, partnerProfile, addMessage])
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -256,10 +294,10 @@ export default function CoupleChat({
                     </div>
                   )}
                   <div
-                    className={`relative group px-4 py-3 rounded-2xl ${
+                    className={`relative group px-4 py-3 rounded-2xl backdrop-blur-xl shadow-lg border transition-all duration-300 hover:scale-[1.02] ${
                       isOwn
-                        ? 'bg-pink-500 text-white ml-auto'
-                        : 'bg-white text-gray-900 shadow-sm border'
+                        ? 'bg-pink-500/30 dark:bg-pink-600/30 text-gray-900 dark:text-gray-100 border-pink-400/50 dark:border-pink-500/50 shadow-pink-500/30 ml-auto'
+                        : 'bg-white/90 dark:bg-gray-800/70 text-gray-900 dark:text-gray-100 shadow-gray-300/20 border-gray-300/70 dark:border-gray-700/60'
                     }`}
                   >
                     <p className="text-sm">{message.content}</p>
@@ -327,7 +365,7 @@ export default function CoupleChat({
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               placeholder={`Message ${partnerProfile.full_name}...`}
-              className="w-full px-4 py-3 border border-pink-200 rounded-2xl resize-none focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+              className="w-full px-4 py-3 border border-pink-300/70 dark:border-pink-200 rounded-2xl resize-none focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent backdrop-blur-xl bg-white/90 dark:bg-gray-800/90 shadow-lg text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
               rows={1}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {

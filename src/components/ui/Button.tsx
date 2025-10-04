@@ -14,12 +14,12 @@ export function Button({
   children, 
   ...props 
 }: ButtonProps) {
-  const baseStyles = 'inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50'
+  const baseStyles = 'inline-flex items-center justify-center rounded-2xl font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:scale-105 active:scale-95 shadow-lg backdrop-blur-sm'
   
   const variants = {
-    primary: 'bg-blue-600 text-white hover:bg-blue-700 focus-visible:ring-blue-500',
-    secondary: 'bg-gray-100 text-gray-900 hover:bg-gray-200 focus-visible:ring-gray-500',
-    outline: 'border border-gray-300 bg-transparent hover:bg-gray-50 focus-visible:ring-gray-500'
+    primary: 'bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700 focus-visible:ring-blue-500 shadow-blue-500/50',
+    secondary: 'bg-white/80 dark:bg-gray-800/80 text-gray-900 dark:text-white hover:bg-white dark:hover:bg-gray-800 focus-visible:ring-gray-500 border border-white/20 dark:border-gray-700/50',
+    outline: 'border border-gray-300/50 dark:border-gray-600/50 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm hover:bg-white dark:hover:bg-gray-800 focus-visible:ring-gray-500'
   }
   
   const sizes = {

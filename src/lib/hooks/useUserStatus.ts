@@ -192,7 +192,9 @@ export function useUserStatus(currentUser: any) {
           last_seen: new Date().toISOString()
         })
         
-        navigator.sendBeacon('/api/user-status', data)
+        // Create a Blob with proper content-type for sendBeacon
+        const blob = new Blob([data], { type: 'application/json' })
+        navigator.sendBeacon('/api/user-status', blob)
       }
     }
 
